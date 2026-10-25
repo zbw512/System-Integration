@@ -1,0 +1,190 @@
+:root {
+  color: #1f2937;
+  background: #f5f7fa;
+  font-family:
+    "Segoe UI",
+    "Microsoft YaHei",
+    "PingFang SC",
+    "Hiragino Sans GB",
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+  min-height: 100%;
+  background: #f5f7fa;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  background:
+    radial-gradient(
+      circle at 8% 0%,
+      rgba(22, 119, 255, 0.08),
+      transparent 32rem
+    ),
+    #f5f7fa;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+::selection {
+  color: #ffffff;
+  background: #1677ff;
+}
+
+:focus-visible {
+  outline: 3px solid rgba(22, 119, 255, 0.28);
+  outline-offset: 2px;
+}
+
+video {
+  max-width: 100%;
+}
+
+.ant-layout {
+  background: transparent;
+}
+
+.ant-card {
+  overflow: hidden;
+  border-color: #e8edf3;
+  border-radius: 12px;
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.03),
+    0 8px 24px rgba(15, 23, 42, 0.05);
+}
+
+.ant-card .ant-card-head {
+  min-height: 52px;
+  padding-inline: 18px;
+  border-bottom-color: #eef1f5;
+}
+
+.ant-card .ant-card-head-title {
+  font-weight: 650;
+  color: #162033;
+}
+
+.ant-card .ant-card-body {
+  padding: 18px;
+}
+
+.ant-upload-wrapper .ant-upload-drag {
+  background: linear-gradient(
+    180deg,
+    #fbfdff 0%,
+    #f7faff 100%
+  );
+  border-color: #b7d3f7;
+  border-radius: 10px;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.ant-upload-wrapper .ant-upload-drag:hover {
+  background: #f4f9ff;
+  border-color: #1677ff;
+}
+
+.ant-upload-wrapper .ant-upload-drag.ant-upload-drag-hover {
+  background: #edf6ff;
+  border-color: #1677ff;
+  box-shadow: inset 0 0 0 2px rgba(22, 119, 255, 0.08);
+}
+
+.ant-upload-wrapper .ant-upload-list-item {
+  border-radius: 8px;
+}
+
+.ant-upload-wrapper .ant-upload-list-item-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ant-progress .ant-progress-text {
+  font-variant-numeric: tabular-nums;
+}
+
+.ant-alert {
+  border-radius: 8px;
+}
+
+.ant-alert-description {
+  line-height: 1.6;
+}
+
+.ant-btn {
+  border-radius: 7px;
+}
+
+.ant-tag {
+  font-variant-numeric: tabular-nums;
+}
+
+.ant-layout-footer {
+  font-size: 12px;
+}
+
+@media (max-width: 768px) {
+  .ant-layout-header {
+    padding: 20px 18px !important;
+  }
+
+  .ant-layout-content {
+    padding: 16px 12px 24px !important;
+  }
+
+  .ant-card .ant-card-head {
+    min-height: 48px;
+    padding-inline: 14px;
+  }
+
+  .ant-card .ant-card-body {
+    padding: 14px;
+  }
+
+  .ant-upload-wrapper .ant-upload-drag {
+    padding-inline: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
