@@ -1,0 +1,31 @@
+# 后端本地忽略规则（仓库根 .gitignore 之外，针对本目录补充）
+
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 测试与覆盖率产物
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# 本地配置与日志（.env.example 可提交，.env 不可提交）
+.env
+*.log
+logs/
+
+# 运行期数据目录：SQLite 数据库 + 上传/登记的视频文件
+# 默认值即 backend/var（可用 BACKEND_DATA_DIR 覆盖）。
+# 仓库根的 .gitignore 恰好也有 var/ 规则，这里显式声明，避免依赖上游规则。
+var/
+
+# 兜底：任何散落的 SQLite 文件与日志
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+
+# 每轮交付包（代码 + 轮次报告），产物不入库
+deliverables/
+*.zip
