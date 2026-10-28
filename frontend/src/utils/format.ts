@@ -26,11 +26,15 @@ export function formatTime(seconds: number): string {
 }
 
 export function formatPercent(
-  value: number,
+  value: number | null | undefined,
   fractionDigits = 1
 ): string {
-  if (!Number.isFinite(value)) {
-    return "—";
+  if (
+    value === null ||
+    value === undefined ||
+    !Number.isFinite(value)
+  ) {
+    return "未提供";
   }
 
   const normalized = Math.max(0, Math.min(1, value));

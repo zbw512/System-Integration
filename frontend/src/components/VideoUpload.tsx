@@ -19,19 +19,11 @@ const { Dragger } = Upload;
 
 const VIDEO_EXTENSIONS = [
   ".mp4",
-  ".webm",
   ".mov",
   ".m4v",
-  ".avi",
-  ".mkv",
-  ".sav",
 ];
 
 function isSupportedVideoFile(file: File): boolean {
-  if (file.type.startsWith("video/")) {
-    return true;
-  }
-
   const normalizedName = file.name.toLowerCase();
 
   return VIDEO_EXTENSIONS.some((extension) =>
@@ -81,7 +73,7 @@ export function VideoUpload() {
         {
           uid: `${file.name}-${file.lastModified}-${file.size}`,
           name: file.name,
-          status: uploadedVideo ? "done" : "ready",
+          status: uploadedVideo ? "done" : undefined,
           size: file.size,
           type: file.type,
         },
@@ -146,14 +138,16 @@ export function VideoUpload() {
         />
 
         <Dragger
-          accept="video/*,.mp4,.webm,.mov,.m4v,.avi,.mkv,.sav"
+          accept=".mp4,.m4v,.mov,video/mp4,video/x-m4v,video/quicktime"
           maxCount={1}
           multiple={false}
           fileList={fileList}
           disabled={isBusy}
           beforeUpload={(candidate) => {
             if (!isSupportedVideoFile(candidate)) {
-              message.error("请选择有效的视频文件。");
+              message.error(
+                "请选择 MP4、M4V 或 MOV 视频文件。"
+              );
               return Upload.LIST_IGNORE;
             }
 
@@ -188,7 +182,7 @@ export function VideoUpload() {
               fontSize: 13,
             }}
           >
-            支持 MP4、WebM、MOV、M4V、AVI、MKV 和 SAV 文件
+            支持 MP4、M4V 和 MOV 文件
           </p>
 
           <p
@@ -198,7 +192,7 @@ export function VideoUpload() {
               fontSize: 12,
             }}
           >
-            特殊视频格式能否直接播放，取决于本地后端转码和浏览器解码能力
+            能否直接播放取决于文件内部编码和浏览器解码能力
           </p>
         </Dragger>
 

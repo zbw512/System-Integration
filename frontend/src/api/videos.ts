@@ -11,16 +11,24 @@ import {
 } from "./mock";
 import type {
   BackendJob,
-  ProcessVideoResponse,
+  JobError,
   SceneSegment,
   VideoRecord,
 } from "../types";
 
-function normalizeConfidence(value: unknown): number {
+function normalizeConfidence(value: unknown): number | null {
+  if (
+    value === null ||
+    value === undefined ||
+    (typeof value === "string" && value.trim() === "")
+  ) {
+    return null;
+  }
+
   const confidence = Number(value);
 
   if (!Number.isFinite(confidence)) {
-    return 0;
+    return null;
   }
 
   return Math.max(0, Math.min(1, confidence));
@@ -107,12 +115,12 @@ export async function uploadVideo(
 
 export async function startVideoAnalysis(
   videoId: string
-): Promise<ProcessVideoResponse> {
+): Promise<BackendJob> {
   if (isMockMode) {
     return startMockVideoAnalysis(videoId);
   }
 
-  const response = await apiClient.post<ProcessVideoResponse>(
+  const response = await apiClient.post<BackendJob>(
     `/videos/${encodeURIComponent(videoId)}/process`,
     {}
   );
@@ -149,26 +157,55 @@ export async function getVideo(
 }
 
 export function getJobId(job: BackendJob): string {
-  const jobId = job.id ?? job.job_id;
+  const jobId = job.job_id;
 
   if (!jobId) {
     throw new Error(
-      "后端任务响应中缺少 job.id 或 job.job_id。"
+      "后端任务响应中缺少 job_id。"
     );
   }
 
   return jobId;
 }
 
+export function getJobErrorMessage(
+  error: JobError | null | undefined,
+  fallback = "视频分析任务失败。"
+): string {
+  const message = error?.message?.trim();
+
+  if (message) {
+    return message;
+  }
+
+  if (error?.code) {
+    return `视频分析任务失败（${error.code}）。`;
+  }
+
+  return fallback;
+}
+
 export function extractVlmSegments(
   job: BackendJob,
   video: VideoRecord
 ): SceneSegment[] {
-  const jobSegments = job.result?.segments;
-  const videoSegments =
-    video.metadata?.vlm_result?.segments;
+  const candidates = [
+    job.result?.segments,
+    video.segments,
+    video.metadata?.vlm_result?.segments,
+  ];
 
-  return normalizeSegments(
-    jobSegments ?? videoSegments
-  );
+  for (const candidate of candidates) {
+    if (!Array.isArray(candidate)) {
+      continue;
+    }
+
+    const segments = normalizeSegments(candidate);
+
+    if (segments.length > 0) {
+      return segments;
+    }
+  }
+
+  return [];
 }

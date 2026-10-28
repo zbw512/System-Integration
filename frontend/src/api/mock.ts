@@ -40,7 +40,8 @@ function createMockResult(): VlmResultBlock {
 
 function toBackendJob(job: MockJobRecord): BackendJob {
   return {
-    id: job.id,
+    job_id: job.id,
+    video_id: job.videoId,
     job_type: "video_process",
     status: job.status,
     progress: job.progress,
@@ -64,25 +65,26 @@ export async function uploadMockVideo(
   mockObjectUrls.add(objectUrl);
 
   const video: VideoRecord = {
-    id: `mock-video-${Date.now()}`,
+    video_id: `mock-video-${Date.now()}`,
     name: file.name,
     status: "registered",
     size_bytes: file.size,
     duration_s: null,
     file_url: objectUrl,
     created_at: new Date().toISOString(),
+    segments: [],
     metadata: {
       mock: true,
     },
   };
 
-  mockVideos.set(video.id, video);
+  mockVideos.set(video.video_id, video);
   return video;
 }
 
 export async function startMockVideoAnalysis(
   videoId: string
-): Promise<{ video_id: string; job: BackendJob }> {
+): Promise<BackendJob> {
   if (!mockVideos.has(videoId)) {
     throw new Error(`Mock 视频不存在：${videoId}`);
   }
@@ -99,10 +101,7 @@ export async function startMockVideoAnalysis(
 
   mockJobs.set(job.id, job);
 
-  return {
-    video_id: videoId,
-    job: toBackendJob(job),
-  };
+  return toBackendJob(job);
 }
 
 export async function getMockJob(
@@ -136,9 +135,9 @@ export async function getMockJob(
       mockVideos.set(job.videoId, {
         ...video,
         status: "processed",
+        segments: job.result?.segments ?? [],
         metadata: {
           ...video.metadata,
-          vlm_result: job.result,
         },
       });
     }

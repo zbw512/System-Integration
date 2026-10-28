@@ -11,13 +11,13 @@ or through the Flask CLI::
 :func:`create_app` builds the application without starting a server, so tests
 can use ``app.test_client()``.
 
-Scope of P0-1
--------------
-Only the HTTP shell exists: ``GET /health``, ``GET /api/v1/info`` and the
-unified error contract. Video upload/analysis, job execution, the MiniCPM-V
-adapter, EEG ingestion and evaluation are **not implemented**; the API reports
-them as ``not_implemented`` / ``capabilities: false`` rather than returning mock
-results.
+Implemented scope
+-----------------
+The application includes video upload/registration and file access, persistent
+analysis jobs, a single background worker, result JSON/CSV export, and both Mock
+and real MiniCPM-V VLM adapters. EEG ingestion, evaluation metrics, cross-modal
+fusion and real-time streaming remain unavailable and are reported honestly by
+the API.
 """
 
 from __future__ import annotations

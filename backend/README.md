@@ -1,4 +1,6 @@
-# 学生学习状态分析系统 — 后端（system_integration/backend）
+# 学生学习状态分析系统 — 后端（backend/）
+
+项目总说明见：[根 README](../README.md)。
 
 基于 Flask 的后端服务，面向「视频 VLM + EEG 多模态学习状态分析」项目。
 接口契约以《前后端接口与数据标准 v1》为准。
@@ -22,54 +24,66 @@
 | 项 | 值（本机实测） |
 |---|---|
 | 操作系统 | Windows |
-| Python | 3.12.7（`minicpm_env` 虚拟环境） |
+| Python | 3.12.7（建议项目内 `backend/.venv`） |
 | Flask | 3.1.3 |
 | pytest | 9.1.1 |
 | 持久化 | SQLite（标准库 `sqlite3`，本机 3.45.3） |
 | 端口 | 8000（接口标准约定 `http://127.0.0.1:8000`） |
 
-解释器路径：
+本文使用项目内虚拟环境；不同机器可换成自己的 Python 3.12 环境：
 
 ```text
-C:\Projects\MiniCPM-V-CookBook\minicpm_env\Scripts\python.exe
+backend\.venv\Scripts\python.exe
 ```
 
-> 本服务**不需要** GPU、PyTorch 或模型权重。视频容器探测是纯 Python 实现（解析 ISO-BMFF `mvhd`），
-> 不引入 OpenCV / FFmpeg / PyAV；P0-3 也不加载任何模型。
+> 默认 Mock 模式不需要 GPU、PyTorch、Transformers 或模型权重。
+> 上传阶段只用纯 Python 解析 ISO-BMFF `mvhd`；真实 VLM 模式使用 PyAV 解码视频，
+> 并在首次任务中加载本地 MiniCPM-V 权重。
 
 ---
 
 ## 2. 安装依赖
 
 ```powershell
-cd C:\Projects\MiniCPM-V-CookBook\system_integration\backend
-C:\Projects\MiniCPM-V-CookBook\minicpm_env\Scripts\python.exe -m pip install -r requirements.txt
+cd <project-root>\backend
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-P0-2、P0-3 **均未新增依赖**（SQLite 用标准库，文件名清洗用已装 Werkzeug）。
-安装后核心依赖保持不变：
+`requirements.txt` 当前显式声明的直接依赖：
 
 ```text
-torch        2.13.0+cu126
-torchvision  0.28.0+cu126
-transformers 5.19.0
+Flask       3.1.3
+pytest      9.1.1
+Pillow      10.4.0
+numpy       1.26.4
+av          19.0.2
 ```
 
-> ⚠️ **不要执行** `inference/requirements.txt`：它会把 `torch` / `transformers` 降级。
+真实 VLM 还需要与主机 CUDA 匹配的 torch/torchvision/transformers。
+这些包没有固定在基础依赖中，必须使用已经验证过的 GPU 环境。
+不要执行其他目录中的 `inference/requirements.txt` 覆盖当前环境。
+
+后端不会自动读取 `.env`。请按 PowerShell 设置进程环境变量：
+
+```powershell
+$env:BACKEND_VLM_ADAPTER = "mock"
+$env:BACKEND_DATA_DIR = "<optional-absolute-data-dir>"
+```
 
 ---
 
 ## 3. 启动服务
 
 ```powershell
-cd C:\Projects\MiniCPM-V-CookBook\system_integration\backend
-C:\Projects\MiniCPM-V-CookBook\minicpm_env\Scripts\python.exe app.py
+cd <project-root>\backend
+.\.venv\Scripts\python.exe app.py
 ```
 
 启动时自动创建数据目录、执行 SQLite 建表（含 `jobs` 表）并拉起**单个**后台任务线程：
 
 ```text
-var/
+backend/var/
 ├── app.db            SQLite 元数据（videos、jobs）
 ├── app.db-wal        WAL 日志
 └── videos/           上传/登记的视频文件
@@ -346,7 +360,7 @@ vid_5bf8f1443db1,export_clip.mp4,2,2.0,3.0,独立学习,0.75,…,false,mock,mock
 | `done` | 1.0 | 完成 |
 
 > `sampling_frames` 属于标准枚举，但 **Mock 适配器不抽帧**，因此当前不会出现该阶段；
-> 真实 MiniCPM 适配器（P0-6）会真正抽帧并推进到该阶段。
+> 真实 MiniCPM 适配器会真正抽帧并推进到该阶段。
 
 ### 5.2 执行方式
 
@@ -422,7 +436,7 @@ vid_5bf8f1443db1,export_clip.mp4,2,2.0,3.0,独立学习,0.75,…,false,mock,mock
 
 ```powershell
 $env:BACKEND_VLM_ADAPTER = "minicpm"
-$env:BACKEND_VLM_MODEL_PATH = "C:\Projects\MiniCPM-V-CookBook\models\MiniCPM-V-4.6"  # 默认值即此
+$env:BACKEND_VLM_MODEL_PATH = "<project-root>\models\MiniCPM-V-4.6"
 python app.py
 ```
 
@@ -537,7 +551,7 @@ python app.py
 | `BACKEND_IMPORT_ROOTS` | 空 | 允许 `register` 的目录（`;` 分隔） |
 | **`BACKEND_JOB_WORKER`** | `true` | 是否启动后台任务线程 |
 | **`BACKEND_VLM_ADAPTER`** | `mock` | 适配器：`mock` 或 `minicpm` |
-| **`BACKEND_VLM_MODEL_PATH`** | `<repo>/models/MiniCPM-V-4.6` | 本地模型目录（不复制进 backend） |
+| **`BACKEND_VLM_MODEL_PATH`** | `<project-root>/models/MiniCPM-V-4.6` | 本地模型目录（不复制进 backend） |
 | **`BACKEND_VLM_DEVICE`** | `cuda` | 推理设备；仅实现并验证 `cuda`，无 CPU 回退 |
 | **`BACKEND_VLM_MAX_FRAMES`** | `8` | 单任务最多采样帧数（1–64） |
 | **`BACKEND_VLM_FRAME_INTERVAL_S`** | `1.0` | 采样间隔（秒，>0） |
@@ -550,11 +564,11 @@ python app.py
 ## 9. 运行测试
 
 ```powershell
-cd C:\Projects\MiniCPM-V-CookBook\system_integration\backend
-C:\Projects\MiniCPM-V-CookBook\minicpm_env\Scripts\python.exe -m pytest -v
+cd <project-root>\backend
+.\.venv\Scripts\python.exe -m pytest -v
 ```
 
-本机实测：
+在隔离环境中的实测结果：
 
 ```text
 277 passed, 1 skipped

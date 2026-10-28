@@ -44,9 +44,9 @@ LIST_MAX_LIMIT = 500
 DEFAULT_VLM_ADAPTER = "mock"
 SUPPORTED_VLM_ADAPTERS = ("mock", "minicpm")
 
-#: Repository root (``...\MiniCPM-V-CookBook``); model weights live outside the
-#: backend directory and are never copied into it.
-REPO_ROOT = BACKEND_DIR.parents[1]
+#: Project root; model weights live outside the backend package and are never
+#: copied into it.
+REPO_ROOT = BACKEND_DIR.parent
 DEFAULT_MODEL_PATH = REPO_ROOT / "models" / "MiniCPM-V-4.6"
 
 #: Short-video sampling defaults for the real adapter. Chosen for a 8 GB GPU:

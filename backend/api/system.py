@@ -3,7 +3,8 @@
 Both endpoints are read-only and deliberately honest: they describe what the
 backend can actually do right now. ``/api/v1/info`` lists unimplemented
 capabilities as ``not_implemented`` instead of advertising features that do not
-exist yet (P0-1 only ships the HTTP shell).
+exist yet. Video jobs, result export and VLM adapter selection are implemented;
+EEG, evaluation and fusion are not.
 """
 
 from __future__ import annotations

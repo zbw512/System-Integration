@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import {
   extractVlmSegments,
   getJob,
+  getJobErrorMessage,
   getVideo,
 } from "../api/videos";
 import { getErrorMessage } from "../api/client";
@@ -108,9 +109,7 @@ export function usePollingJob(
         }
 
         if (job.status === "failed") {
-          throw new Error(
-            job.error || "视频分析任务失败。"
-          );
+          throw new Error(getJobErrorMessage(job.error));
         }
 
         if (job.status === "canceled") {

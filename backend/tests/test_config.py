@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import pytest
 
-from config import Config
+from config import BACKEND_DIR, Config
 
 
 def _clear_backend_env(monkeypatch) -> None:
@@ -29,6 +30,9 @@ def test_defaults_when_no_env_is_set(monkeypatch):
     assert cfg.testing is False
     assert cfg.log_level == "INFO"
     assert cfg.max_upload_bytes == 512 * 1024 * 1024
+    assert Path(cfg.vlm_model_path) == (
+        BACKEND_DIR.parent / "models" / "MiniCPM-V-4.6"
+    )
 
 
 def test_environment_overrides_are_applied(monkeypatch):
@@ -38,6 +42,10 @@ def test_environment_overrides_are_applied(monkeypatch):
     monkeypatch.setenv("BACKEND_DEBUG", "true")
     monkeypatch.setenv("BACKEND_LOG_LEVEL", "debug")
     monkeypatch.setenv("BACKEND_MAX_UPLOAD_MB", "16")
+    monkeypatch.setenv(
+        "BACKEND_VLM_MODEL_PATH",
+        "D:\\models\\custom-minicpm",
+    )
 
     cfg = Config.from_env()
 
@@ -46,6 +54,7 @@ def test_environment_overrides_are_applied(monkeypatch):
     assert cfg.debug is True
     assert cfg.log_level == "DEBUG"
     assert cfg.max_upload_bytes == 16 * 1024 * 1024
+    assert cfg.vlm_model_path == "D:\\models\\custom-minicpm"
 
 
 def test_invalid_port_is_rejected(monkeypatch):

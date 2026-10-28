@@ -1,9 +1,9 @@
 {
-  "name": "video-vlm-frontend",
+  "name": "learning-state-analysis-frontend",
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "P0 demo frontend for offline video upload, VLM job polling, and scene timeline visualization.",
+  "description": "Frontend for offline video upload, VLM job polling, and scene timeline visualization.",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

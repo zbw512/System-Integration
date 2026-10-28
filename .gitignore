@@ -1,0 +1,20 @@
+# Local Python environments
+.venv/
+**/.venv/
+
+# Local model assets; weights must not be committed
+models/
+
+# Runtime data and generated builds
+backend/var/
+frontend/dist/
+**/__pycache__/
+**/.pytest_cache/
+
+# Local environment files
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log

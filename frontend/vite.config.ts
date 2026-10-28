@@ -6,6 +6,16 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const backendTarget =
     env.VITE_BACKEND_PROXY_TARGET || "http://127.0.0.1:8000";
+  const proxy = {
+    "/api": {
+      target: backendTarget,
+      changeOrigin: true,
+    },
+    "/health": {
+      target: backendTarget,
+      changeOrigin: true,
+    },
+  };
 
   return {
     base: "/",
@@ -19,21 +29,13 @@ export default defineConfig(({ mode }) => {
       host: "127.0.0.1",
       port: 5173,
       strictPort: true,
-      proxy: {
-        "/api": {
-          target: backendTarget,
-          changeOrigin: true,
-        },
-        "/health": {
-          target: backendTarget,
-          changeOrigin: true,
-        },
-      },
+      proxy,
     },
     preview: {
       host: "127.0.0.1",
       port: 4173,
       strictPort: true,
+      proxy,
     },
     build: {
       outDir: "dist",

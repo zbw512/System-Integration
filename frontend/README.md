@@ -1,5 +1,7 @@
 # Video VLM Frontend
 
+项目总说明见：[根 README](../README.md)。
+
 基于 React、TypeScript、Zustand 与 Ant Design 的本地视频 VLM 分析前端。
 
 第一版 P0 Demo 聚焦一个最小可运行闭环：
@@ -134,11 +136,13 @@ type JobStatus =
 VITE_API_BASE_URL=/api/v1
 VITE_USE_MOCK=false
 VITE_REQUEST_TIMEOUT_MS=30000
+VITE_BACKEND_PROXY_TARGET=http://127.0.0.1:8000
 ```
 
 - `VITE_API_BASE_URL`：REST API 基础地址。
 - `VITE_USE_MOCK`：设置为 `true` 时启用前端独立演示，不需要后端。
 - `VITE_REQUEST_TIMEOUT_MS`：Axios 请求超时时间。
+- `VITE_BACKEND_PROXY_TARGET`：Vite dev/preview 将 `/api` 和 `/health` 转发到的后端地址。
 
 ### 5.2 上传视频
 
@@ -157,7 +161,7 @@ file: <视频文件>
 
 ```json
 {
-  "id": "sav_20181016_05_1064",
+  "video_id": "sav_20181016_05_1064",
   "name": "sample.mp4",
   "status": "registered",
   "size_bytes": 681715,
@@ -176,13 +180,15 @@ POST /api/v1/videos/{video_id}/process
 
 ```json
 {
+  "schema_version": "1.0",
+  "job_id": "job-001",
   "video_id": "sav_20181016_05_1064",
-  "job": {
-    "id": "job-001",
-    "job_type": "video_process",
-    "status": "queued",
-    "progress": 0.0
-  }
+  "job_type": "video_process",
+  "status": "queued",
+  "stage": "queued",
+  "progress": 0.0,
+  "result": null,
+  "error": null
 }
 ```
 
@@ -196,7 +202,8 @@ GET /api/v1/jobs/{job_id}
 
 ```json
 {
-  "id": "job-001",
+  "job_id": "job-001",
+  "video_id": "sav_20181016_05_1064",
   "job_type": "video_process",
   "status": "running",
   "progress": 0.45,
@@ -209,7 +216,8 @@ GET /api/v1/jobs/{job_id}
 
 ```json
 {
-  "id": "job-001",
+  "job_id": "job-001",
+  "video_id": "sav_20181016_05_1064",
   "job_type": "video_process",
   "status": "completed",
   "progress": 1.0,
@@ -238,7 +246,8 @@ GET /api/v1/videos/{video_id}
 
 ```text
 job.result.segments
-video.metadata.vlm_result.segments
+video.segments
+video.metadata.vlm_result.segments（兼容旧 Mock/旧数据）
 ```
 
 统一转换为：
@@ -248,7 +257,7 @@ interface SceneSegment {
   start: number;
   end: number;
   scene: string;
-  confidence: number;
+  confidence: number | null;
 }
 ```
 
@@ -294,8 +303,8 @@ npm --version
 ### 6.2 安装依赖
 
 ```bash
-cd video-vlm-frontend
-npm install
+cd frontend
+npm ci
 ```
 
 如项目包含 `package-lock.json`，推荐使用：
@@ -322,6 +331,7 @@ Copy-Item .env.example .env.local
 VITE_API_BASE_URL=/api/v1
 VITE_USE_MOCK=false
 VITE_REQUEST_TIMEOUT_MS=30000
+VITE_BACKEND_PROXY_TARGET=http://127.0.0.1:8000
 ```
 
 ### 6.4 启动前端
@@ -340,9 +350,10 @@ http://127.0.0.1:5173
 
 ```text
 /api  -> http://127.0.0.1:8000/api
+/health -> http://127.0.0.1:8000/health
 ```
 
-如果后端地址不是 `127.0.0.1:8000`，请修改根目录 `vite.config.ts` 中的代理目标。
+后端地址由 `VITE_BACKEND_PROXY_TARGET` 配置；缺省为 `http://127.0.0.1:8000`。dev 和 preview 使用同一代理配置。
 
 ### 6.5 后端启动要求
 
@@ -410,6 +421,7 @@ dist/
 ```
 
 生产环境推荐由本地 Flask、FastAPI 或 Nginx 同源托管 `dist/`，并将 `/api` 反向代理到本地后端。
+`npm run preview` 已配置 `/api` 和 `/health` 代理，可直接用于本地生产构建联调。
 
 ---
 
@@ -474,7 +486,7 @@ src/components/TimelineViewer.tsx
 ## 9. 目录结构
 
 ```text
-video-vlm-frontend/
+frontend/
 ├── public/
 │   └── favicon.svg
 ├── src/
@@ -674,12 +686,13 @@ interface SceneSegment {
 
 ## 15. 已知限制
 
-1. SAV 等特殊容器是否可播放取决于后端转码和浏览器编码支持。
+1. 当前只接受 MP4、M4V、MOV；不包含 WebM、AVI、MKV、SAV 或视频转码能力。
 2. 第一版不持久化前端历史任务。
 3. 第一版不支持取消任务；是否取消由后端能力决定。
 4. 分析百分比取决于后端 `progress` 字段；后端无法估算时可能长期显示阶段文本。
 5. Mock 数据不代表真实模型准确率。
 6. 本项目是前端工作成果，真实 VLM 推理由本地后端负责。
+7. 当前 Vite 5 开发依赖的安全审计报告包含 1 个中危和 1 个高危项；可用的自动修复会升级到 Vite 8，属于后续独立依赖升级工作。开发服务器仅绑定 `127.0.0.1`。
 
 ---
 

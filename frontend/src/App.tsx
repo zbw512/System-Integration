@@ -40,7 +40,7 @@ export default function App() {
   );
 
   usePollingJob(
-    video?.id ?? null,
+    video?.video_id ?? null,
     jobId,
     status === "analyzing"
   );
@@ -58,8 +58,8 @@ export default function App() {
         "正在创建视频分析任务..."
       );
 
-      const response = await startVideoAnalysis(video.id);
-      setJobId(getJobId(response.job));
+      const job = await startVideoAnalysis(video.video_id);
+      setJobId(getJobId(job));
     } catch (error) {
       failAnalysis(getErrorMessage(error));
     }

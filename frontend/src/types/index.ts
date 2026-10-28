@@ -8,7 +8,7 @@ export interface SceneSegment {
   start: number;
   end: number;
   scene: string;
-  confidence: number;
+  confidence: number | null;
 }
 
 export interface RawVlmSegment {
@@ -18,7 +18,7 @@ export interface RawVlmSegment {
   end_s?: number;
   scene?: string;
   scene_label?: string;
-  confidence?: number;
+  confidence?: number | null;
 }
 
 export interface VlmResultBlock {
@@ -28,32 +28,35 @@ export interface VlmResultBlock {
 }
 
 export interface VideoRecord {
-  id: string;
+  video_id: string;
   name: string;
   status: string;
   size_bytes: number;
   duration_s: number | null;
   file_url: string;
   created_at?: string;
+  segments?: unknown[];
   metadata?: {
     vlm_result?: VlmResultBlock;
     [key: string]: unknown;
   };
 }
 
+export interface JobError {
+  code: string;
+  message: string;
+  retryable: boolean;
+  details?: Record<string, unknown>;
+}
+
 export interface BackendJob {
-  id?: string;
-  job_id?: string;
+  job_id: string;
+  video_id: string;
   job_type?: string;
   status: string;
   progress?: number;
-  error?: string | null;
+  error?: JobError | null;
   result?: VlmResultBlock | null;
-}
-
-export interface ProcessVideoResponse {
-  video_id: string;
-  job: BackendJob;
 }
 
 export interface ApiErrorBody {
@@ -94,6 +97,6 @@ export interface MockJobRecord {
   createdAt: number;
   status: "queued" | "running" | "completed" | "failed";
   progress: number;
-  error: string | null;
+  error: JobError | null;
   result: VlmResultBlock | null;
 }
