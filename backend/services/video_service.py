@@ -64,7 +64,7 @@ class VideoService:
     # ------------------------------------------------------------------ #
     # Public API
     # ------------------------------------------------------------------ #
-    def create_from_upload(self, upload) -> Video:
+    def create_from_upload(self, upload, *, user_id: str | None = None) -> Video:
         """Persist a multipart upload and return the new ``registered`` record."""
         display_name = storage_files.sanitize_name(getattr(upload, "filename", "") or "")
         if not display_name:
@@ -109,6 +109,7 @@ class VideoService:
                 segments=[],
                 metadata=metadata,
                 storage_path=dest_rel,
+                user_id=user_id,
             )
             return self._repository.create(video)
         except BaseException:
@@ -124,6 +125,7 @@ class VideoService:
         name: str | None = None,
         video_id: str | None = None,
         metadata: Mapping[str, Any] | None = None,
+        user_id: str | None = None,
     ) -> Video:
         """Register a file that already exists inside an allowed import root."""
         if source not in REGISTERABLE_SOURCES:
@@ -197,6 +199,7 @@ class VideoService:
                 segments=[],
                 metadata=merged_metadata,
                 storage_path=dest_rel,
+                user_id=user_id,
             )
             return self._repository.create(video)
         except BaseException:

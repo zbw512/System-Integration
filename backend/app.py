@@ -40,6 +40,7 @@ from adapters.vlm import build_vlm_adapter
 from config import Config
 from logging_setup import configure_logging
 from services.export_service import ExportService
+from services.auth_service import AuthService
 from services.job_service import JobService
 from services.task_runner import JobRunner
 from services.video_service import VideoService
@@ -110,6 +111,7 @@ def create_app(config: Optional[Config] = None) -> Flask:
     storage_db.init_db(cfg.database_path)
     app.extensions["video_service"] = VideoService(cfg)
     app.extensions["export_service"] = ExportService(cfg)
+    app.extensions["auth_service"] = AuthService(cfg.database_path)
 
     # --- analysis pipeline -------------------------------------------------
     # The adapter is resolved through ``app.extensions`` on every job, so a

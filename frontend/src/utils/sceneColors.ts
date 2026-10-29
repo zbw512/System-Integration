@@ -7,48 +7,48 @@ export interface SceneColorPalette {
 
 const SCENE_PALETTES: SceneColorPalette[] = [
   {
-    background: "#e6f4ff",
-    backgroundStrong: "#91caff",
-    border: "#1677ff",
-    text: "#0958d9",
+    background: "#eef5fc",
+    backgroundStrong: "#c9dff4",
+    border: "#9abfe3",
+    text: "#255f96",
   },
   {
-    background: "#f6ffed",
-    backgroundStrong: "#b7eb8f",
-    border: "#52c41a",
-    text: "#237804",
+    background: "#eef8f2",
+    backgroundStrong: "#cde7d8",
+    border: "#9ecdb2",
+    text: "#2d6b49",
   },
   {
-    background: "#fff7e6",
-    backgroundStrong: "#ffd591",
-    border: "#fa8c16",
-    text: "#ad4e00",
+    background: "#fff6ea",
+    backgroundStrong: "#f0d9b9",
+    border: "#dfc19b",
+    text: "#8a5a24",
   },
   {
-    background: "#f9f0ff",
-    backgroundStrong: "#d3adf7",
-    border: "#722ed1",
-    text: "#531dab",
+    background: "#f5f1fa",
+    backgroundStrong: "#ded2ed",
+    border: "#c5b5dc",
+    text: "#655084",
   },
   {
-    background: "#e6fffb",
-    backgroundStrong: "#87e8de",
-    border: "#13c2c2",
-    text: "#006d75",
+    background: "#edf8f8",
+    backgroundStrong: "#cbe7e5",
+    border: "#9dcdc9",
+    text: "#336f6c",
   },
   {
-    background: "#fff0f6",
-    backgroundStrong: "#ffadd2",
-    border: "#eb2f96",
-    text: "#9e1068",
+    background: "#fbf0f4",
+    backgroundStrong: "#ebcedb",
+    border: "#d9aebf",
+    text: "#855065",
   },
 ];
 
 const FALLBACK_PALETTE: SceneColorPalette = {
-  background: "#f5f5f5",
-  backgroundStrong: "#d9d9d9",
-  border: "#8c8c8c",
-  text: "#595959",
+  background: "#f4f4f5",
+  backgroundStrong: "#dedee1",
+  border: "#b9b9bf",
+  text: "#5f5f66",
 };
 
 function hashScene(scene: string): number {

@@ -39,6 +39,7 @@ _COLUMNS = (
     "segments_json",
     "metadata_json",
     "storage_path",
+    "user_id",
 )
 
 _INSERT_SQL = (
@@ -65,6 +66,7 @@ def _row_to_video(row: sqlite3.Row) -> Video:
         segments=json.loads(row["segments_json"] or "[]"),
         metadata=json.loads(row["metadata_json"] or "{}"),
         storage_path=row["storage_path"],
+        user_id=row["user_id"],
     )
 
 
@@ -85,6 +87,7 @@ def _video_to_params(video: Video) -> tuple[Any, ...]:
         json.dumps(video.segments, ensure_ascii=False),
         json.dumps(video.metadata, ensure_ascii=False),
         video.storage_path,
+        video.user_id,
     )
 
 
@@ -245,6 +248,7 @@ _JOB_COLUMNS = (
     "provider",
     "model_json",
     "metadata_json",
+    "user_id",
 )
 
 _JOB_INSERT_SQL = (
@@ -273,6 +277,7 @@ def _row_to_job(row: sqlite3.Row) -> Job:
         provider=row["provider"],
         model=json.loads(row["model_json"]) if row["model_json"] else None,
         metadata=json.loads(row["metadata_json"] or "{}"),
+        user_id=row["user_id"],
     )
 
 
@@ -292,6 +297,7 @@ def _job_to_params(job: Job) -> tuple[Any, ...]:
         job.provider,
         None if job.model is None else json.dumps(job.model, ensure_ascii=False),
         json.dumps(job.metadata, ensure_ascii=False),
+        job.user_id,
     )
 
 
@@ -391,6 +397,76 @@ class JobRepository:
         except sqlite3.Error as exc:
             raise StorageError(details={"reason": "read_failed"}) from exc
         return _row_to_job(row) if row is not None else None
+
+    def list_history(
+        self,
+        *,
+        user_id: str,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[dict[str, Any]], int]:
+        """Return a user's analysis jobs joined with their video summary.
+
+        Historical results stay attached to the immutable Job row even when a
+        later analysis replaces the Video's current ``segments``.
+        """
+
+        try:
+            with connect(self._db_path) as connection:
+                total = int(
+                    connection.execute(
+                        "SELECT COUNT(*) FROM jobs WHERE user_id = ?",
+                        (user_id,),
+                    ).fetchone()[0]
+                )
+                rows = connection.execute(
+                    "SELECT "
+                    "j.job_id, j.job_type, j.status, j.stage, j.progress, "
+                    "j.video_id, j.created_at, j.started_at, j.finished_at, "
+                    "j.result_json, j.error_json, j.provider, j.model_json, "
+                    "j.metadata_json, j.user_id, "
+                    "v.name AS video_name, v.duration_s "
+                    "FROM jobs j JOIN videos v ON v.video_id = j.video_id "
+                    "WHERE j.user_id = ? "
+                    "ORDER BY j.created_at DESC, j.job_id ASC "
+                    "LIMIT ? OFFSET ?",
+                    (user_id, int(limit), int(offset)),
+                ).fetchall()
+        except sqlite3.Error as exc:
+            raise StorageError(details={"reason": "read_failed"}) from exc
+
+        items: list[dict[str, Any]] = []
+        for row in rows:
+            job = _row_to_job(row)
+            result = job.result or {}
+            items.append(
+                {
+                    "job_id": job.job_id,
+                    "job_type": job.job_type.value,
+                    "status": job.status.value,
+                    "stage": job.stage.value,
+                    "progress": job.progress,
+                    "video_id": job.video_id,
+                    "created_at": job.created_at,
+                    "started_at": job.started_at,
+                    "finished_at": job.finished_at,
+                    "error": job.error,
+                    "provider": job.provider,
+                    "video_name": row["video_name"],
+                    "duration_s": (
+                        None
+                        if row["duration_s"] is None
+                        else float(row["duration_s"])
+                    ),
+                    "segment_count": int(
+                        result.get("segment_count")
+                        or len(result.get("segments") or [])
+                    ),
+                    "is_mock": bool(result.get("is_mock", False)),
+                    "prediction_source": result.get("prediction_source"),
+                }
+            )
+        return items, total
 
     # -- guarded transitions ------------------------------------------------
     @staticmethod

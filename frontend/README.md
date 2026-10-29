@@ -21,7 +21,7 @@
 
 ## 1. 项目简介
 
-本项目用于研究人员上传本地离线视频文件，并调用本地后端 VLM 服务分析视频中的学习场景。
+本项目是“基于视频 VLM 与 EEG 的多模态学生学习状态分析系统”的前端初版。当前可执行部分是本地视频 VLM 学习场景分析；EEG 专注度解码、时间对齐和跨模态融合尚未接入。
 
 分析完成后，页面展示：
 
@@ -53,6 +53,9 @@ P0 Demo 的目标是验证“视频上传 → VLM 分析 → 时间轴展示”�
 - 视频 `timeupdate` 事件监听。
 - 根据当前播放时间高亮场景色块。
 - 点击场景色块后执行视频 seek 和播放。
+- 右上角本地账户登录、注册和退出入口。
+- 登录后的个人分析历史抽屉，历史数据来自真实 Job 接口。
+- 系统能力分区，明确标识当前可用能力与 EEG/融合后续能力。
 - 错误、网络异常、空结果和重新分析状态展示。
 - 前端独立 Mock 演示模式。
 - TypeScript 严格模式。
@@ -66,8 +69,8 @@ P0 Demo 的目标是验证“视频上传 → VLM 分析 → 时间轴展示”�
 - 实时视频流或 `MediaStream`。
 - 跨模态注意力融合。
 - 多模态时间戳对齐。
-- 用户登录与权限。
-- 评估页、混淆矩阵和历史 run 管理。
+- 细粒度角色权限、团队共享和完整的多用户 API 隔离。
+- 评估页、混淆矩阵和人工标注管理。
 - 云端对象存储。
 - 公网数据上传。
 
@@ -280,6 +283,18 @@ interface SceneSegment {
 ]
 ```
 
+### 5.6 本地账户与个人历史
+
+```text
+POST /api/v1/auth/register  创建账户，成功返回 201 并设置会话 Cookie
+POST /api/v1/auth/login     登录并设置会话 Cookie
+POST /api/v1/auth/logout    撤销当前会话
+GET  /api/v1/auth/me        查询当前登录状态
+GET  /api/v1/history        查询当前用户的 Job 历史，未登录返回 401
+```
+
+会话令牌保存在 HttpOnly、SameSite=Lax Cookie 中。历史接口只返回 `jobs.user_id` 与当前用户一致的任务；升级前没有用户归属的匿名 Job 不会出现在个人历史中。未登录状态仍可继续上传、分析和查看当前结果。
+
 ---
 
 ## 6. 本地运行
@@ -491,13 +506,18 @@ frontend/
 │   └── favicon.svg
 ├── src/
 │   ├── api/
+│   │   ├── auth.ts
 │   │   ├── client.ts
+│   │   ├── history.ts
 │   │   ├── mock.ts
 │   │   └── videos.ts
 │   ├── assets/
 │   │   └── app-mark.svg
 │   ├── components/
 │   │   ├── AnalysisProgress.tsx
+│   │   ├── AppHeader.tsx
+│   │   ├── AuthModal.tsx
+│   │   ├── HistoryDrawer.tsx
 │   │   ├── TimelineViewer.tsx
 │   │   └── VideoUpload.tsx
 │   ├── hooks/
@@ -505,7 +525,8 @@ frontend/
 │   ├── mock/
 │   │   └── vlmSegments.ts
 │   ├── store/
-│   │   └── useAppStore.ts
+│   │   ├── useAppStore.ts
+│   │   └── useAuthStore.ts
 │   ├── types/
 │   │   └── index.ts
 │   ├── utils/
@@ -603,7 +624,7 @@ interface SceneSegment {
   start: number;
   end: number;
   scene: string;
-  confidence: number;
+  confidence: number | null;
 }
 ```
 
@@ -679,7 +700,7 @@ interface SceneSegment {
 - 不上传 EEG 或个人生理数据。
 - VLM 服务地址由本地后端管理。
 - 生产构建可完全部署在本地主机。
-- 页面刷新后会丢失当前上传任务，第一版不保存历史。
+- 页面刷新后会丢失当前页面操作状态；登录用户可在“分析历史”中查看已经完成并归属本人的 Job。
 - 上传视频保存在本地后端配置的数据目录。
 
 ---
@@ -687,12 +708,13 @@ interface SceneSegment {
 ## 15. 已知限制
 
 1. 当前只接受 MP4、M4V、MOV；不包含 WebM、AVI、MKV、SAV 或视频转码能力。
-2. 第一版不持久化前端历史任务。
+2. 当前活动上传和分析状态不做前端持久化；已完成的登录用户 Job 由后端保存并显示在历史抽屉。
 3. 第一版不支持取消任务；是否取消由后端能力决定。
 4. 分析百分比取决于后端 `progress` 字段；后端无法估算时可能长期显示阶段文本。
 5. Mock 数据不代表真实模型准确率。
 6. 本项目是前端工作成果，真实 VLM 推理由本地后端负责。
 7. 当前 Vite 5 开发依赖的安全审计报告包含 1 个中危和 1 个高危项；可用的自动修复会升级到 Vite 8，属于后续独立依赖升级工作。开发服务器仅绑定 `127.0.0.1`。
+8. 现有匿名 VLM 流程保持可用；账户和历史只对新建任务建立用户归属，旧的匿名 Job 不会出现在个人历史中。
 
 ---
 

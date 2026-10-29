@@ -18,6 +18,7 @@ import os
 
 from flask import Blueprint, current_app, jsonify, request, send_file
 
+from api.auth import get_optional_user
 from api.errors import ApiError
 from api.params import parse_int_arg
 from schemas.enums import VideoSource
@@ -56,7 +57,13 @@ def upload_video():
             status=400,
             details={"field": "file", "content_type": request.content_type},
         )
-    return _created_response(_service().create_from_upload(upload))
+    user = get_optional_user()
+    return _created_response(
+        _service().create_from_upload(
+            upload,
+            user_id=None if user is None else user.user_id,
+        )
+    )
 
 
 @videos_bp.post("/register")
@@ -92,12 +99,14 @@ def register_video():
             details={"field": "metadata"},
         )
 
+    user = get_optional_user()
     video = _service().create_from_path(
         payload.get("path"),
         source=VideoSource(source_raw),
         name=payload.get("name"),
         video_id=payload.get("video_id"),
         metadata=metadata,
+        user_id=None if user is None else user.user_id,
     )
     return _created_response(video)
 
@@ -197,7 +206,11 @@ def create_process_job(video_id: str):
     analysis itself runs in the single background worker, so the client is never
     blocked by model latency.
     """
-    job = current_app.extensions["job_service"].create_video_process_job(video_id)
+    user = get_optional_user()
+    job = current_app.extensions["job_service"].create_video_process_job(
+        video_id,
+        user_id=None if user is None else user.user_id,
+    )
     response = jsonify(job.to_dict())
     response.status_code = 202
     response.headers["Location"] = (

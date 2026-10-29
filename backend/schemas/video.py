@@ -40,6 +40,10 @@ class Video:
     #: Path relative to the data directory; internal, never serialized.
     storage_path: str | None = None
 
+    #: Owner used for authenticated history. Never exposed in the public Video
+    #: payload, preserving the existing frontend/API contract.
+    user_id: str | None = None
+
     def __post_init__(self) -> None:
         self.source = VideoSource(self.source)
         self.status = VideoStatus(self.status)

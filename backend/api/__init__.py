@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from flask import Flask
 
+from api.auth import auth_bp
+from api.history import history_bp
 from api.jobs import jobs_bp
 from api.system import health_bp, info_bp
 from api.videos import videos_bp
@@ -24,5 +26,7 @@ def register_blueprints(app: Flask) -> None:
     # versioned under ``/api/v1``.
     app.register_blueprint(health_bp)
     app.register_blueprint(info_bp, url_prefix=cfg.api_prefix)
+    app.register_blueprint(auth_bp, url_prefix=f"{cfg.api_prefix}/auth")
+    app.register_blueprint(history_bp, url_prefix=f"{cfg.api_prefix}/history")
     app.register_blueprint(videos_bp, url_prefix=f"{cfg.api_prefix}/videos")
     app.register_blueprint(jobs_bp, url_prefix=f"{cfg.api_prefix}/jobs")

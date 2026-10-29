@@ -18,6 +18,25 @@ from typing import Iterator
 
 SCHEMA_STATEMENTS = (
     """
+    CREATE TABLE IF NOT EXISTS users (
+        user_id       TEXT PRIMARY KEY,
+        username      TEXT NOT NULL,
+        username_key  TEXT NOT NULL UNIQUE,
+        display_name  TEXT NOT NULL,
+        password_hash TEXT NOT NULL,
+        created_at    TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS sessions (
+        token_hash TEXT PRIMARY KEY,
+        user_id    TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+    )
+    """,
+    """
     CREATE TABLE IF NOT EXISTS videos (
         video_id            TEXT PRIMARY KEY,
         name                TEXT NOT NULL,
@@ -33,7 +52,8 @@ SCHEMA_STATEMENTS = (
         model_json          TEXT,
         segments_json       TEXT NOT NULL DEFAULT '[]',
         metadata_json       TEXT NOT NULL DEFAULT '{}',
-        storage_path        TEXT
+        storage_path        TEXT,
+        user_id             TEXT
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_videos_created_at ON videos(created_at DESC, video_id)",
@@ -55,12 +75,15 @@ SCHEMA_STATEMENTS = (
         provider      TEXT,
         model_json    TEXT,
         metadata_json TEXT NOT NULL DEFAULT '{}',
+        user_id       TEXT,
         FOREIGN KEY (video_id) REFERENCES videos(video_id) ON DELETE CASCADE
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_jobs_video ON jobs(video_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status)",
     "CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at DESC, job_id)",
+    "CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)",
+    "CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at)",
 )
 
 
@@ -90,6 +113,22 @@ def init_db(db_path: str) -> None:
     with connect(db_path) as connection:
         for statement in SCHEMA_STATEMENTS:
             connection.execute(statement)
+
+        # ``CREATE TABLE IF NOT EXISTS`` does not add columns to databases
+        # created by an earlier release. Keep the migration intentionally tiny
+        # and nullable so existing anonymous videos/jobs remain readable.
+        for table in ("videos", "jobs"):
+            columns = {
+                row["name"]
+                for row in connection.execute(f"PRAGMA table_info({table})")
+            }
+            if "user_id" not in columns:
+                connection.execute(f"ALTER TABLE {table} ADD COLUMN user_id TEXT")
+
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_jobs_user_created "
+            "ON jobs(user_id, created_at DESC, job_id)"
+        )
 
 
 def ping(db_path: str) -> bool:

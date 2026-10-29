@@ -84,7 +84,7 @@ cd <project-root>\backend
 
 ```text
 backend/var/
-├── app.db            SQLite 元数据（videos、jobs）
+├── app.db            SQLite 元数据（users、sessions、videos、jobs）
 ├── app.db-wal        WAL 日志
 └── videos/           上传/登记的视频文件
 ```
@@ -101,6 +101,11 @@ backend/var/
 |---|---|---|---|
 | GET | `/health` | 健康检查 | 200 |
 | GET | `/api/v1/info` | 服务与接口说明（能力矩阵、适配器、枚举、Job 策略） | 200 |
+| POST | `/api/v1/auth/register` | 创建本地账户并登录 | 201 |
+| POST | `/api/v1/auth/login` | 登录本地账户 | 200 |
+| POST | `/api/v1/auth/logout` | 退出并撤销当前会话 | 200 |
+| GET | `/api/v1/auth/me` | 查询当前会话 | 200 |
+| GET | `/api/v1/history` | 查询当前登录用户的 Job 历史 | 200 |
 | POST | `/api/v1/videos/upload` | 上传视频（`multipart/form-data`，字段 `file`） | 201 |
 | POST | `/api/v1/videos/register` | 登记导入目录内的视频 | 201 |
 | GET | `/api/v1/videos` | 视频列表 | 200 |
@@ -705,6 +710,8 @@ backend/
 17. CSV 固定带 **UTF-8 BOM**；如果下游程序不希望有 BOM，需要自行 `utf-8-sig` 解码后处理。
 18. 导出只读当前结果，**不保留历史版本**；重新分析会覆盖旧结果（见第 11 条）。
 19. 预览帧与原始视频内容属于学生画面数据：`metadata` 只记录时间戳/标签/依据，不写日志、不入库原始帧。
+20. 本地账户使用 PBKDF2-SHA256 和 HttpOnly、SameSite=Lax 会话 Cookie；正式部署仍需 HTTPS、登录限流和会话审计。为兼容未登录 VLM 流程，视频、Job 详情和结果接口仍保持全局可访问，个人历史接口本身按 `user_id` 隔离。
+21. `videos.user_id` 与 `jobs.user_id` 是可空内部字段；旧匿名记录不会被归到任何账户。
 
 ---
 

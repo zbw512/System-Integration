@@ -177,13 +177,18 @@ System-Intergration/
         ├── index.css
         ├── vite-env.d.ts
         ├── api/
+        │   ├── auth.ts
         │   ├── client.ts
+        │   ├── history.ts
         │   ├── mock.ts
         │   └── videos.ts
         ├── assets/
         │   └── app-mark.svg
         ├── components/
         │   ├── AnalysisProgress.tsx
+        │   ├── AppHeader.tsx
+        │   ├── AuthModal.tsx
+        │   ├── HistoryDrawer.tsx
         │   ├── TimelineViewer.tsx
         │   └── VideoUpload.tsx
         ├── hooks/
@@ -191,7 +196,8 @@ System-Intergration/
         ├── mock/
         │   └── vlmSegments.ts
         ├── store/
-        │   └── useAppStore.ts
+        │   ├── useAppStore.ts
+        │   └── useAuthStore.ts
         ├── types/
         │   └── index.ts
         └── utils/
@@ -243,7 +249,12 @@ frontend/node_modules/
 | `src/mock/vlmSegments.ts` | 前端独立 Mock 使用的 5 个固定场景。 |
 | `src/utils/format.ts` | 时间、百分比和文件大小格式化；null/undefined 置信度显示“未提供”。 |
 | `src/utils/sceneColors.ts` | 根据场景标签选择颜色，未知标签使用稳定哈希配色。 |
-| `src/assets/app-mark.svg` | 备用品牌图形；当前未在页面源码中引用。 |
+| `src/components/AppHeader.tsx` | 简洁页头、本地处理状态和右上角账户入口。 |
+| `src/components/AuthModal.tsx` | 本地账户登录与注册弹窗。 |
+| `src/components/HistoryDrawer.tsx` | 当前登录用户的 Job 历史列表与结果打开入口。 |
+| `src/api/auth.ts` / `src/store/useAuthStore.ts` | 账户接口和前端会话状态。 |
+| `src/api/history.ts` | 个人历史查询。 |
+| `src/assets/app-mark.svg` | 页头品牌图形。 |
 | `public/favicon.svg` | 浏览器 favicon。 |
 
 ### 4.4 前端配置与依赖
@@ -1038,13 +1049,14 @@ npm run build
 8. 服务重启会将进行中的任务标记失败，不续跑。
 9. 没有任务取消接口。
 10. 重新分析会清空旧结果。
-11. 没有鉴权、用户隔离和多租户支持。
+11. 已提供本地账户和按用户 Job 历史，但没有细粒度角色权限、团队共享和完整 API 数据隔离；为保留匿名 VLM 使用，视频与 Job 详情接口仍全局可访问。
 12. 没有 EEG、融合、评价指标、实时流或 WebSocket。
 13. 没有前端自动化测试。
 14. 异步 Job 错误没有 request_id，只能通过页面显示和日志中的 job_id 关联。
 15. `/health` 当前固定将 `checks.vlm_adapter` 报为 `not_implemented`，与 `/api/v1/info` 的适配器信息不完全一致，不能只看这一项判断模型是否配置成功。
 16. Vite 5/esbuild 审计告警需要后续大版本升级处理。
 17. 当前集成交付改动尚未提交到 Git。
+18. 本地账户使用 PBKDF2-SHA256、HttpOnly Cookie 和 SQLite 会话；正式部署还需 HTTPS、登录限流和审计。
 
 ## 15. 旧文档与最终代码的差异
 

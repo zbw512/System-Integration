@@ -1,6 +1,5 @@
 import { useState } from "react";
 import {
-  Alert,
   Button,
   Card,
   Progress,
@@ -117,11 +116,17 @@ export function VideoUpload() {
 
   return (
     <Card
-      title="本地视频上传"
+      className="panel-card upload-panel"
+      title={
+        <span className="panel-title">
+          <span className="panel-step">01</span>
+          选择课堂视频
+        </span>
+      }
       size="small"
       extra={
-        <Typography.Text type="secondary">
-          文件仅发送至本地分析服务
+        <Typography.Text type="secondary" className="panel-extra">
+          本地服务
         </Typography.Text>
       }
     >
@@ -130,12 +135,9 @@ export function VideoUpload() {
         size={14}
         style={{ width: "100%" }}
       >
-        <Alert
-          type="info"
-          showIcon
-          message="P0 Demo 仅处理本地离线视频"
-          description="选择视频后通过 multipart/form-data 上传到本地后端。上传完成后，可创建 VLM 分析任务。"
-        />
+        <p className="upload-note">
+          支持 MP4、M4V、MOV。文件只发送到当前本地分析服务。
+        </p>
 
         <Dragger
           accept=".mp4,.m4v,.mov,video/mp4,video/x-m4v,video/quicktime"
@@ -168,11 +170,11 @@ export function VideoUpload() {
           <p
             style={{
               margin: 0,
-              fontSize: 16,
+              fontSize: 15,
               fontWeight: 600,
             }}
           >
-            点击或将本地视频拖拽到此区域
+            将课堂视频拖到这里
           </p>
 
           <p
@@ -182,7 +184,7 @@ export function VideoUpload() {
               fontSize: 13,
             }}
           >
-            支持 MP4、M4V 和 MOV 文件
+            或点击选择文件 · 支持 MP4、M4V 和 MOV
           </p>
 
           <p
@@ -192,16 +194,17 @@ export function VideoUpload() {
               fontSize: 12,
             }}
           >
-            能否直接播放取决于文件内部编码和浏览器解码能力
+            是否能直接播放取决于视频内部编码
           </p>
         </Dragger>
 
         {file && (
           <div
+            className="selected-file"
             style={{
               padding: "10px 12px",
-              border: "1px solid #f0f0f0",
-              borderRadius: 8,
+              border: "1px solid #ececef",
+              borderRadius: 10,
               background: "#fafafa",
             }}
           >
@@ -240,6 +243,7 @@ export function VideoUpload() {
         )}
 
         <div
+          className="panel-actions"
           style={{
             display: "flex",
             alignItems: "center",

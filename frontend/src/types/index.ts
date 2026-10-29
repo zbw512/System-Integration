@@ -35,6 +35,14 @@ export interface VideoRecord {
   duration_s: number | null;
   file_url: string;
   created_at?: string;
+  prediction_source?: string;
+  provider?: string | null;
+  evaluation_eligible?: boolean;
+  model?: {
+    name?: string;
+    version?: string;
+    prompt_version?: string;
+  } | null;
   segments?: unknown[];
   metadata?: {
     vlm_result?: VlmResultBlock;
@@ -99,4 +107,45 @@ export interface MockJobRecord {
   progress: number;
   error: JobError | null;
   result: VlmResultBlock | null;
+}
+
+export interface AuthUser {
+  user_id: string;
+  username: string;
+  display_name: string;
+  created_at: string;
+}
+
+export interface AuthResponse {
+  authenticated: boolean;
+  user: AuthUser | null;
+}
+
+export interface HistoryItem {
+  job_id: string;
+  video_id: string;
+  video_name: string;
+  job_type: string;
+  status: string;
+  stage: string;
+  progress: number;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  duration_s: number | null;
+  segment_count: number;
+  is_mock: boolean;
+  prediction_source: string | null;
+  provider: string | null;
+  error: JobError | null;
+}
+
+export interface HistoryResponse {
+  items: HistoryItem[];
+  pagination: {
+    limit: number;
+    offset: number;
+    total: number;
+    has_next: boolean;
+  };
 }

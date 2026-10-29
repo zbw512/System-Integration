@@ -25,6 +25,9 @@
 - 场景 Segment 结果；
 - JSON/CSV 结果导出；
 - 前端上传进度、轮询、视频播放器和场景时间轴；
+- 本地账户注册、登录、退出和 HttpOnly Cookie 会话；
+- 登录用户的个人分析历史，历史以持久化 Job 为单位；
+- Apple 风格单页工作台、右上角账户入口和历史抽屉；
 - 前端独立 Mock 模式；
 - 可选的真实 MiniCPM-V 4.6 离线逐帧分类。
 
@@ -37,7 +40,7 @@
 - 任务取消；
 - CPU 推理；
 - 视频转码；
-- 用户、权限和多用户隔离。
+- 细粒度角色权限、团队共享和完整的多用户数据隔离。
 
 ## 技术栈
 
@@ -270,6 +273,11 @@ $env:BACKEND_VLM_DEVICE = "cuda"
 | POST | `/api/v1/videos/{video_id}/process` | 创建分析任务，返回 202 |
 | GET | `/api/v1/jobs` | 任务列表 |
 | GET | `/api/v1/jobs/{job_id}` | 任务详情 |
+| POST | `/api/v1/auth/register` | 创建本地账户并建立登录会话 |
+| POST | `/api/v1/auth/login` | 登录并更新会话 Cookie |
+| POST | `/api/v1/auth/logout` | 退出并撤销当前会话 |
+| GET | `/api/v1/auth/me` | 查询当前登录状态 |
+| GET | `/api/v1/history` | 查询当前用户的个人分析历史，需要登录 |
 | GET | `/api/v1/videos/{video_id}/results?format=json\|csv` | 查询或导出结果 |
 
 上传：
@@ -406,8 +414,12 @@ confidence, evidence, is_uncertain
 
 `backend/var/app.db` 包含：
 
+- `users` 表：本地账户、显示名称和 PBKDF2 密码摘要；
+- `sessions` 表：会话令牌摘要、所属用户和过期时间；
 - `videos` 表：视频元数据、当前分析来源、Segment JSON、模型和评价资格；
-- `jobs` 表：任务状态、阶段、进度、结果/错误 JSON 和模型信息。
+- `jobs` 表：任务状态、阶段、进度、结果/错误 JSON、模型信息和可空的用户归属。
+
+`videos.user_id` 与 `jobs.user_id` 只用于内部归属和历史查询，不加入现有 Video/Job 公共响应字段。升级前已有的匿名记录保持 `user_id=null`，不会出现在任何个人历史中。
 
 数据库使用 WAL。视频文件在 `backend/var/videos/`，API 不暴露存储绝对路径。
 
@@ -528,6 +540,8 @@ Vite preview 已代理 `/api` 和 `/health`。正式部署建议将前端静态�
 10. `npm audit` 当前报告 Vite/esbuild 开发依赖存在 1 个中危和 1 个高危项；自动修复要求 Vite 大版本升级，尚未在本轮执行。开发服务器仅绑定 `127.0.0.1`。
 11. 异步 Job 错误展示 `message`，页面同时显示 `job_id`，但当前 Job error 不携带创建请求的 `request_id`。
 12. Ant Design 静态 `message` API 会在浏览器控制台产生一条上下文警告，不影响当前操作。
+13. 本地账户使用 PBKDF2-SHA256 密码摘要和 HttpOnly、SameSite=Lax 会话 Cookie；正式部署仍需 HTTPS、登录限流、会话管理和审计。为保持未登录用户的现有 VLM 使用方式，视频、Job 详情和结果导出接口仍是全局可访问的，不能把它们视为完整的隐私隔离边界。
+14. 个人历史按 Job 保存，可查看每次已完成分析的真实结果；Video 当前结果在重新分析时仍会被覆盖。
 
 ## 常见问题
 

@@ -46,6 +46,7 @@ class Job:
     provider: str | None = None
     model: dict[str, Any] | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    user_id: str | None = None
 
     schema_version: str = SCHEMA_VERSION
 

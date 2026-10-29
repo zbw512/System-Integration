@@ -61,6 +61,32 @@ class InvalidVideoRequestError(ServiceError):
     default_message = "视频请求参数不合法"
 
 
+class InvalidAccountRequestError(ServiceError):
+    code = "VALIDATION_ERROR"
+    status = 400
+    default_message = "账户信息不合法"
+
+
+class InvalidCredentialsError(ServiceError):
+    """Use one generic message to avoid revealing whether a user exists."""
+
+    code = "INVALID_CREDENTIALS"
+    status = 401
+    default_message = "用户名或密码不正确"
+
+
+class AuthenticationRequiredError(ServiceError):
+    code = "AUTHENTICATION_REQUIRED"
+    status = 401
+    default_message = "请先登录后查看个人历史"
+
+
+class UsernameTakenError(ServiceError):
+    code = "USERNAME_TAKEN"
+    status = 409
+    default_message = "该用户名已被使用"
+
+
 class UnsupportedVideoFormatError(ServiceError):
     code = "UNSUPPORTED_VIDEO_FORMAT"
     status = 415

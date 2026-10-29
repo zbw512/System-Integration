@@ -83,7 +83,13 @@ export function AnalysisProgress({
 
   return (
     <Card
-      title="上传与分析进度"
+      className="panel-card progress-panel"
+      title={
+        <span className="panel-title">
+          <span className="panel-step">02</span>
+          分析任务
+        </span>
+      }
       size="small"
       extra={
         jobId ? (
@@ -125,6 +131,7 @@ export function AnalysisProgress({
         />
 
         <div
+          className="panel-actions"
           style={{
             display: "flex",
             alignItems: "center",

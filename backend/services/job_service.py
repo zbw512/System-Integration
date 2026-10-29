@@ -45,7 +45,12 @@ class JobService:
     # ------------------------------------------------------------------ #
     # Creation
     # ------------------------------------------------------------------ #
-    def create_video_process_job(self, video_id: str) -> Job:
+    def create_video_process_job(
+        self,
+        video_id: str,
+        *,
+        user_id: str | None = None,
+    ) -> Job:
         """Queue a ``video_process`` job for an existing video."""
         video = self._videos.get(video_id)
         if video is None:
@@ -67,6 +72,7 @@ class JobService:
             video_id=video_id,
             created_at=utc_timestamp(),
             metadata={"requested_from": "api"},
+            user_id=user_id,
         )
 
         # One transaction: job row + video status change.
@@ -118,6 +124,30 @@ class JobService:
             },
             # Transition alias required by the standard (section 1.4).
             "jobs": items,
+        }
+
+    def list_history(
+        self,
+        *,
+        user_id: str,
+        limit: int,
+        offset: int,
+    ) -> dict:
+        """Return only the authenticated user's persisted analysis jobs."""
+
+        items, total = self._jobs.list_history(
+            user_id=user_id,
+            limit=limit,
+            offset=offset,
+        )
+        return {
+            "items": items,
+            "pagination": {
+                "limit": limit,
+                "offset": offset,
+                "total": total,
+                "has_next": offset + len(items) < total,
+            },
         }
 
     # ------------------------------------------------------------------ #

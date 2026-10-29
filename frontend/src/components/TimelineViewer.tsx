@@ -14,13 +14,14 @@ import {
   Tooltip,
   Typography,
 } from "antd";
-import type { SceneSegment } from "../types";
+import type { SceneSegment, VideoRecord } from "../types";
 import { formatPercent, formatTime } from "../utils/format";
 import { getSceneColor } from "../utils/sceneColors";
 
 interface TimelineViewerProps {
   videoUrl: string | null;
   segments: SceneSegment[];
+  video: VideoRecord | null;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -30,6 +31,7 @@ function clamp(value: number, min: number, max: number): number {
 export function TimelineViewer({
   videoUrl,
   segments,
+  video,
 }: TimelineViewerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [currentTime, setCurrentTime] = useState(0);
@@ -106,8 +108,34 @@ export function TimelineViewer({
 
   if (!videoUrl) {
     return (
-      <Card title="视频与场景时间轴" size="small">
-        <Empty description="上传视频后将在这里显示视频和 VLM 场景时间轴" />
+      <Card
+        className="timeline-panel timeline-panel-empty"
+        title={
+          <span className="panel-title">
+            <span className="panel-step">03</span>
+            视频与场景时间轴
+          </span>
+        }
+        size="small"
+      >
+        <div className="timeline-empty">
+          <div className="timeline-empty-art" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+            <span />
+          </div>
+          <Empty
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description={
+              <span>
+                上传视频并完成分析后
+                <br />
+                在这里复核视频与学习场景时间轴
+              </span>
+            }
+          />
+        </div>
       </Card>
     );
   }
@@ -118,7 +146,13 @@ export function TimelineViewer({
 
   return (
     <Card
-      title="视频与场景时间轴"
+      className="timeline-panel"
+      title={
+        <span className="panel-title">
+          <span className="panel-step">03</span>
+          视频与场景时间轴
+        </span>
+      }
       size="small"
       extra={
         activeSegment ? (
@@ -153,10 +187,32 @@ export function TimelineViewer({
           />
         )}
 
+        <div className="analysis-source">
+          <span>
+            <strong>分析来源</strong>
+            {video?.prediction_source === "mock"
+              ? "模拟适配器"
+              : video?.provider || "视觉模型"}
+          </span>
+          <span>
+            {video?.model?.name
+              ? `${video.model.name}${
+                  video.model.version ? ` ${video.model.version}` : ""
+                }`
+              : "模型版本未提供"}
+          </span>
+          {video?.prediction_source === "mock" && (
+            <Tag bordered={false} color="warning">
+              Mock 结果，不用于模型评价
+            </Tag>
+          )}
+        </div>
+
         <div
+          className="video-frame"
           style={{
             overflow: "hidden",
-            borderRadius: 10,
+            borderRadius: 14,
             background: "#000",
           }}
         >
@@ -244,15 +300,15 @@ export function TimelineViewer({
 
           <div
             aria-label="视频场景时间轴"
+            className="timeline-track"
             style={{
               position: "relative",
               width: "100%",
               minHeight: 86,
               overflow: "hidden",
-              borderRadius: 8,
-              border: "1px solid #d9d9d9",
-              background:
-                "linear-gradient(to bottom, #fafafa 0, #fafafa 18px, #ffffff 18px, #ffffff 100%)",
+              borderRadius: 12,
+              border: "1px solid #e5e5e7",
+              background: "#ffffff",
             }}
           >
             {[0, 25, 50, 75, 100].map((percent) => (
