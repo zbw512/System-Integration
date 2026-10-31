@@ -147,9 +147,12 @@ class MiniCPMV46Adapter(VlmAdapter):
 
         frame_labels: list[FrameLabel] = []
         total = max(1, sampling.count)
+
+
         for position, frame in enumerate(sampling.frames):
             raw = self._generate(processor, model, device, frame.image)
             parsed = parse_label_response(raw)
+
             frame_labels.append(
                 FrameLabel(
                     timestamp_s=frame.timestamp_s,
@@ -158,6 +161,15 @@ class MiniCPMV46Adapter(VlmAdapter):
                     is_uncertain=parsed.is_uncertain,
                 )
             )
+            if reporter is not None:
+                # Inference spans 0.35 -> 0.75; the runner then reports parsing.
+                reporter(
+                    JobStage.INFERENCE.value,
+                    round(0.35 + 0.4 * (position + 1) / total, 3),
+                )
+
+
+
             if reporter is not None:
                 # Inference spans 0.35 -> 0.75; the runner then reports parsing.
                 reporter(
