@@ -26,6 +26,13 @@ API_PREFIX = "/api/v1"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8000
 DEFAULT_MAX_UPLOAD_MB = 512
+DEFAULT_GUEST_SESSION_TTL_HOURS = 24
+DEFAULT_SESSION_TTL_DAYS = 14
+DEFAULT_LOGIN_MAX_FAILURES = 5
+DEFAULT_LOGIN_WINDOW_SECONDS = 15 * 60
+DEFAULT_LOGIN_BLOCK_SECONDS = 15 * 60
+DEFAULT_REGISTRATION_MAX_ATTEMPTS = 10
+DEFAULT_REGISTRATION_WINDOW_SECONDS = 60 * 60
 
 #: Backend source directory; defaults keep runtime data out of the code tree.
 BACKEND_DIR = Path(__file__).resolve().parent
@@ -148,6 +155,14 @@ class Config:
 
     list_default_limit: int = LIST_DEFAULT_LIMIT
     list_max_limit: int = LIST_MAX_LIMIT
+    guest_session_ttl_hours: int = DEFAULT_GUEST_SESSION_TTL_HOURS
+    session_ttl_days: int = DEFAULT_SESSION_TTL_DAYS
+    login_max_failures: int = DEFAULT_LOGIN_MAX_FAILURES
+    login_window_seconds: int = DEFAULT_LOGIN_WINDOW_SECONDS
+    login_block_seconds: int = DEFAULT_LOGIN_BLOCK_SECONDS
+    registration_max_attempts: int = DEFAULT_REGISTRATION_MAX_ATTEMPTS
+    registration_window_seconds: int = DEFAULT_REGISTRATION_WINDOW_SECONDS
+    registration_token: str | None = None
 
     # --- background analysis ------------------------------------------------
     #: Start the single background worker thread when the application boots.
@@ -212,6 +227,42 @@ class Config:
         if vlm_max_new_tokens < 1:
             raise ValueError("环境变量 BACKEND_VLM_MAX_NEW_TOKENS 必须为正整数")
 
+        guest_session_ttl_hours = _env_int(
+            "BACKEND_GUEST_SESSION_TTL_HOURS",
+            DEFAULT_GUEST_SESSION_TTL_HOURS,
+        )
+        if guest_session_ttl_hours < 1:
+            raise ValueError("环境变量 BACKEND_GUEST_SESSION_TTL_HOURS 必须为正整数")
+
+        session_ttl_days = _env_int("BACKEND_SESSION_TTL_DAYS", DEFAULT_SESSION_TTL_DAYS)
+        login_max_failures = _env_int(
+            "BACKEND_LOGIN_MAX_FAILURES", DEFAULT_LOGIN_MAX_FAILURES
+        )
+        login_window_seconds = _env_int(
+            "BACKEND_LOGIN_WINDOW_SECONDS", DEFAULT_LOGIN_WINDOW_SECONDS
+        )
+        login_block_seconds = _env_int(
+            "BACKEND_LOGIN_BLOCK_SECONDS", DEFAULT_LOGIN_BLOCK_SECONDS
+        )
+        registration_max_attempts = _env_int(
+            "BACKEND_REGISTRATION_MAX_ATTEMPTS",
+            DEFAULT_REGISTRATION_MAX_ATTEMPTS,
+        )
+        registration_window_seconds = _env_int(
+            "BACKEND_REGISTRATION_WINDOW_SECONDS",
+            DEFAULT_REGISTRATION_WINDOW_SECONDS,
+        )
+        for name, value in (
+            ("BACKEND_SESSION_TTL_DAYS", session_ttl_days),
+            ("BACKEND_LOGIN_MAX_FAILURES", login_max_failures),
+            ("BACKEND_LOGIN_WINDOW_SECONDS", login_window_seconds),
+            ("BACKEND_LOGIN_BLOCK_SECONDS", login_block_seconds),
+            ("BACKEND_REGISTRATION_MAX_ATTEMPTS", registration_max_attempts),
+            ("BACKEND_REGISTRATION_WINDOW_SECONDS", registration_window_seconds),
+        ):
+            if value < 1:
+                raise ValueError(f"环境变量 {name} 必须为正整数")
+
         return cls(
             host=_env_str("BACKEND_HOST", DEFAULT_HOST),
             port=port,
@@ -225,6 +276,14 @@ class Config:
             db_path=db_path or None,
             video_subdir=_env_str("BACKEND_VIDEO_SUBDIR", DEFAULT_VIDEO_SUBDIR),
             import_roots=_env_paths("BACKEND_IMPORT_ROOTS"),
+            guest_session_ttl_hours=guest_session_ttl_hours,
+            session_ttl_days=session_ttl_days,
+            login_max_failures=login_max_failures,
+            login_window_seconds=login_window_seconds,
+            login_block_seconds=login_block_seconds,
+            registration_max_attempts=registration_max_attempts,
+            registration_window_seconds=registration_window_seconds,
+            registration_token=_env_str("BACKEND_REGISTRATION_TOKEN", "") or None,
             job_worker_enabled=_env_bool("BACKEND_JOB_WORKER", True),
             vlm_adapter=vlm_adapter,
             vlm_model_path=_env_str("BACKEND_VLM_MODEL_PATH", str(DEFAULT_MODEL_PATH)),

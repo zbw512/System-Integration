@@ -30,6 +30,10 @@ def test_defaults_when_no_env_is_set(monkeypatch):
     assert cfg.testing is False
     assert cfg.log_level == "INFO"
     assert cfg.max_upload_bytes == 512 * 1024 * 1024
+    assert cfg.session_ttl_days == 14
+    assert cfg.guest_session_ttl_hours == 24
+    assert cfg.login_max_failures == 5
+    assert cfg.registration_token is None
     assert Path(cfg.vlm_model_path) == (
         BACKEND_DIR.parent / "models" / "MiniCPM-V-4.6"
     )
@@ -42,6 +46,9 @@ def test_environment_overrides_are_applied(monkeypatch):
     monkeypatch.setenv("BACKEND_DEBUG", "true")
     monkeypatch.setenv("BACKEND_LOG_LEVEL", "debug")
     monkeypatch.setenv("BACKEND_MAX_UPLOAD_MB", "16")
+    monkeypatch.setenv("BACKEND_SESSION_TTL_DAYS", "3")
+    monkeypatch.setenv("BACKEND_LOGIN_MAX_FAILURES", "2")
+    monkeypatch.setenv("BACKEND_REGISTRATION_TOKEN", "admin-token")
     monkeypatch.setenv(
         "BACKEND_VLM_MODEL_PATH",
         "D:\\models\\custom-minicpm",
@@ -54,6 +61,9 @@ def test_environment_overrides_are_applied(monkeypatch):
     assert cfg.debug is True
     assert cfg.log_level == "DEBUG"
     assert cfg.max_upload_bytes == 16 * 1024 * 1024
+    assert cfg.session_ttl_days == 3
+    assert cfg.login_max_failures == 2
+    assert cfg.registration_token == "admin-token"
     assert cfg.vlm_model_path == "D:\\models\\custom-minicpm"
 
 
@@ -68,6 +78,14 @@ def test_invalid_port_is_rejected(monkeypatch):
 def test_non_positive_upload_limit_is_rejected(monkeypatch):
     _clear_backend_env(monkeypatch)
     monkeypatch.setenv("BACKEND_MAX_UPLOAD_MB", "0")
+
+    with pytest.raises(ValueError):
+        Config.from_env()
+
+
+def test_non_positive_session_security_values_are_rejected(monkeypatch):
+    _clear_backend_env(monkeypatch)
+    monkeypatch.setenv("BACKEND_SESSION_TTL_DAYS", "0")
 
     with pytest.raises(ValueError):
         Config.from_env()

@@ -47,6 +47,14 @@ from storage.repositories import JobRepository, VideoRepository
 logger = logging.getLogger(__name__)
 
 DEFAULT_DRAIN_TIMEOUT = 30.0
+STAGE_ORDER = {
+    JobStage.LOADING_VIDEO: 1,
+    JobStage.SAMPLING_FRAMES: 2,
+    JobStage.INFERENCE: 3,
+    JobStage.PARSING: 4,
+    JobStage.SAVING: 5,
+    JobStage.DONE: 6,
+}
 
 
 class JobRunner:
@@ -155,7 +163,10 @@ class JobRunner:
             )
             return
 
-        stage_state = {"stage": JobStage.LOADING_VIDEO}
+        stage_state = {
+            "stage": JobStage.LOADING_VIDEO,
+            "last_progress": 0.1,
+        }
 
         def report_progress(stage_name: str, progress: float) -> None:
             """Adapter-facing hook: persist a real stage/progress pair."""
@@ -163,7 +174,20 @@ class JobRunner:
                 job_stage = JobStage(stage_name)
             except ValueError:  # pragma: no cover - adapter bug guard
                 return
+            last_stage = stage_state["stage"]
+            last_progress = float(stage_state["last_progress"])
+            if (
+                STAGE_ORDER.get(job_stage, 0)
+                < STAGE_ORDER.get(last_stage, 0)
+                or progress < last_progress
+                or (
+                    job_stage is last_stage
+                    and progress <= last_progress
+                )
+            ):
+                return
             stage_state["stage"] = job_stage
+            stage_state["last_progress"] = progress
             self._set_progress(job_id, job_stage, progress)
 
         try:

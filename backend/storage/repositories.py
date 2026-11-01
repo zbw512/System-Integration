@@ -40,6 +40,7 @@ _COLUMNS = (
     "metadata_json",
     "storage_path",
     "user_id",
+    "guest_id",
 )
 
 _INSERT_SQL = (
@@ -48,6 +49,26 @@ _INSERT_SQL = (
 )
 
 _SELECT_SQL = f"SELECT {', '.join(_COLUMNS)} FROM videos"
+
+
+def _owner_filter(
+    *,
+    user_id: str | None,
+    guest_id: str | None,
+    prefix: str = "",
+) -> tuple[str, list[str]]:
+    column = f"{prefix}." if prefix else ""
+    if user_id is not None and guest_id is None:
+        return (
+            f"{column}user_id = ? AND {column}guest_id IS NULL",
+            [user_id],
+        )
+    if guest_id is not None and user_id is None:
+        return (
+            f"{column}guest_id = ? AND {column}user_id IS NULL",
+            [guest_id],
+        )
+    return ("0 = 1", [])
 
 
 def _row_to_video(row: sqlite3.Row) -> Video:
@@ -67,6 +88,7 @@ def _row_to_video(row: sqlite3.Row) -> Video:
         metadata=json.loads(row["metadata_json"] or "{}"),
         storage_path=row["storage_path"],
         user_id=row["user_id"],
+        guest_id=row["guest_id"],
     )
 
 
@@ -88,6 +110,7 @@ def _video_to_params(video: Video) -> tuple[Any, ...]:
         json.dumps(video.metadata, ensure_ascii=False),
         video.storage_path,
         video.user_id,
+        video.guest_id,
     )
 
 
@@ -112,6 +135,24 @@ class VideoRepository:
             with connect(self._db_path) as connection:
                 row = connection.execute(
                     f"{_SELECT_SQL} WHERE video_id = ?", (video_id,)
+                ).fetchone()
+        except sqlite3.Error as exc:
+            raise StorageError(details={"reason": "read_failed"}) from exc
+        return _row_to_video(row) if row is not None else None
+
+    def get_for_access(
+        self,
+        video_id: str,
+        *,
+        user_id: str | None,
+        guest_id: str | None,
+    ) -> Video | None:
+        owner_sql, owner_params = _owner_filter(user_id=user_id, guest_id=guest_id)
+        try:
+            with connect(self._db_path) as connection:
+                row = connection.execute(
+                    f"{_SELECT_SQL} WHERE video_id = ? AND {owner_sql}",
+                    (video_id, *owner_params),
                 ).fetchone()
         except sqlite3.Error as exc:
             raise StorageError(details={"reason": "read_failed"}) from exc
@@ -152,6 +193,45 @@ class VideoRepository:
                 total = int(
                     connection.execute(
                         f"SELECT COUNT(*) FROM videos{where}", tuple(params)
+                    ).fetchone()[0]
+                )
+                rows = connection.execute(
+                    f"{_SELECT_SQL}{where} "
+                    "ORDER BY created_at DESC, video_id ASC LIMIT ? OFFSET ?",
+                    tuple(params) + (int(limit), int(offset)),
+                ).fetchall()
+        except sqlite3.Error as exc:
+            raise StorageError(details={"reason": "read_failed"}) from exc
+
+        return [_row_to_video(row) for row in rows], total
+
+    def list_for_access(
+        self,
+        *,
+        limit: int,
+        offset: int,
+        user_id: str | None,
+        guest_id: str | None,
+        status: str | None = None,
+        source: str | None = None,
+    ) -> tuple[list[Video], int]:
+        owner_sql, owner_params = _owner_filter(user_id=user_id, guest_id=guest_id)
+        clauses = [owner_sql]
+        params = list(owner_params)
+        if status:
+            clauses.append("status = ?")
+            params.append(status)
+        if source:
+            clauses.append("source = ?")
+            params.append(source)
+        where = " WHERE " + " AND ".join(clauses)
+
+        try:
+            with connect(self._db_path) as connection:
+                total = int(
+                    connection.execute(
+                        f"SELECT COUNT(*) FROM videos{where}",
+                        tuple(params),
                     ).fetchone()[0]
                 )
                 rows = connection.execute(
@@ -249,6 +329,7 @@ _JOB_COLUMNS = (
     "model_json",
     "metadata_json",
     "user_id",
+    "guest_id",
 )
 
 _JOB_INSERT_SQL = (
@@ -257,6 +338,11 @@ _JOB_INSERT_SQL = (
 )
 
 _JOB_SELECT_SQL = f"SELECT {', '.join(_JOB_COLUMNS)} FROM jobs"
+_JOB_SELECT_JOIN_SQL = (
+    "SELECT "
+    + ", ".join(f"j.{column}" for column in _JOB_COLUMNS)
+    + " FROM jobs j JOIN videos v ON v.video_id = j.video_id"
+)
 
 ACTIVE_JOB_STATUSES = (JobStatus.QUEUED.value, JobStatus.RUNNING.value)
 
@@ -278,6 +364,7 @@ def _row_to_job(row: sqlite3.Row) -> Job:
         model=json.loads(row["model_json"]) if row["model_json"] else None,
         metadata=json.loads(row["metadata_json"] or "{}"),
         user_id=row["user_id"],
+        guest_id=row["guest_id"],
     )
 
 
@@ -298,6 +385,7 @@ def _job_to_params(job: Job) -> tuple[Any, ...]:
         None if job.model is None else json.dumps(job.model, ensure_ascii=False),
         json.dumps(job.metadata, ensure_ascii=False),
         job.user_id,
+        job.guest_id,
     )
 
 
@@ -321,6 +409,13 @@ class JobRepository:
         Used by the service so the job insert and the video status change share
         one transaction.
         """
+        parent = connection.execute(
+            "SELECT 1 FROM videos "
+            "WHERE video_id = ? AND user_id IS ? AND guest_id IS ?",
+            (job.video_id, job.user_id, job.guest_id),
+        ).fetchone()
+        if parent is None:
+            raise StorageError(details={"reason": "job_owner_mismatch"})
         connection.execute(_JOB_INSERT_SQL, _job_to_params(job))
         return job
 
@@ -339,6 +434,34 @@ class JobRepository:
             with connect(self._db_path) as connection:
                 row = connection.execute(
                     f"{_JOB_SELECT_SQL} WHERE job_id = ?", (job_id,)
+                ).fetchone()
+        except sqlite3.Error as exc:
+            raise StorageError(details={"reason": "read_failed"}) from exc
+        return _row_to_job(row) if row is not None else None
+
+    def get_for_access(
+        self,
+        job_id: str,
+        *,
+        user_id: str | None,
+        guest_id: str | None,
+    ) -> Job | None:
+        job_owner_sql, job_params = _owner_filter(
+            user_id=user_id,
+            guest_id=guest_id,
+            prefix="j",
+        )
+        video_owner_sql, video_params = _owner_filter(
+            user_id=user_id,
+            guest_id=guest_id,
+            prefix="v",
+        )
+        try:
+            with connect(self._db_path) as connection:
+                row = connection.execute(
+                    f"{_JOB_SELECT_JOIN_SQL} "
+                    f"WHERE j.job_id = ? AND {job_owner_sql} AND {video_owner_sql}",
+                    (job_id, *job_params, *video_params),
                 ).fetchone()
         except sqlite3.Error as exc:
             raise StorageError(details={"reason": "read_failed"}) from exc
@@ -384,6 +507,59 @@ class JobRepository:
 
         return [_row_to_job(row) for row in rows], total
 
+    def list_for_access(
+        self,
+        *,
+        limit: int,
+        offset: int,
+        user_id: str | None,
+        guest_id: str | None,
+        status: str | None = None,
+        video_id: str | None = None,
+        job_type: str | None = None,
+    ) -> tuple[list[Job], int]:
+        job_owner_sql, job_params = _owner_filter(
+            user_id=user_id,
+            guest_id=guest_id,
+            prefix="j",
+        )
+        video_owner_sql, video_params = _owner_filter(
+            user_id=user_id,
+            guest_id=guest_id,
+            prefix="v",
+        )
+        clauses = [job_owner_sql, video_owner_sql]
+        params = [*job_params, *video_params]
+        if status:
+            clauses.append("j.status = ?")
+            params.append(status)
+        if video_id:
+            clauses.append("j.video_id = ?")
+            params.append(video_id)
+        if job_type:
+            clauses.append("j.job_type = ?")
+            params.append(job_type)
+        where = " WHERE " + " AND ".join(clauses)
+
+        try:
+            with connect(self._db_path) as connection:
+                total = int(
+                    connection.execute(
+                        f"SELECT COUNT(*) FROM jobs j "
+                        f"JOIN videos v ON v.video_id = j.video_id{where}",
+                        tuple(params),
+                    ).fetchone()[0]
+                )
+                rows = connection.execute(
+                    f"{_JOB_SELECT_JOIN_SQL}{where} "
+                    "ORDER BY j.created_at DESC, j.job_id ASC LIMIT ? OFFSET ?",
+                    tuple(params) + (int(limit), int(offset)),
+                ).fetchall()
+        except sqlite3.Error as exc:
+            raise StorageError(details={"reason": "read_failed"}) from exc
+
+        return [_row_to_job(row) for row in rows], total
+
     def find_active_for_video(self, video_id: str) -> Job | None:
         """Return the queued/running job of a video, if any."""
         placeholders = ", ".join("?" for _ in ACTIVE_JOB_STATUSES)
@@ -415,8 +591,11 @@ class JobRepository:
             with connect(self._db_path) as connection:
                 total = int(
                     connection.execute(
-                        "SELECT COUNT(*) FROM jobs WHERE user_id = ?",
-                        (user_id,),
+                        "SELECT COUNT(*) FROM jobs j "
+                        "JOIN videos v ON v.video_id = j.video_id "
+                        "WHERE j.user_id = ? AND j.guest_id IS NULL "
+                        "AND v.user_id = ? AND v.guest_id IS NULL",
+                        (user_id, user_id),
                     ).fetchone()[0]
                 )
                 rows = connection.execute(
@@ -424,13 +603,14 @@ class JobRepository:
                     "j.job_id, j.job_type, j.status, j.stage, j.progress, "
                     "j.video_id, j.created_at, j.started_at, j.finished_at, "
                     "j.result_json, j.error_json, j.provider, j.model_json, "
-                    "j.metadata_json, j.user_id, "
+                    "j.metadata_json, j.user_id, j.guest_id, "
                     "v.name AS video_name, v.duration_s "
                     "FROM jobs j JOIN videos v ON v.video_id = j.video_id "
-                    "WHERE j.user_id = ? "
+                    "WHERE j.user_id = ? AND j.guest_id IS NULL "
+                    "AND v.user_id = ? AND v.guest_id IS NULL "
                     "ORDER BY j.created_at DESC, j.job_id ASC "
                     "LIMIT ? OFFSET ?",
-                    (user_id, int(limit), int(offset)),
+                    (user_id, user_id, int(limit), int(offset)),
                 ).fetchall()
         except sqlite3.Error as exc:
             raise StorageError(details={"reason": "read_failed"}) from exc

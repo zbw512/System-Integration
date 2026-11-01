@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ConfigProvider, message } from "antd";
 import zhCN from "antd/locale/zh_CN";
 import { getErrorMessage, isMockMode } from "./api/client";
@@ -35,14 +35,19 @@ export default function App() {
     (state) => state.setAnalysisProgress
   );
   const failAnalysis = useAppStore((state) => state.failAnalysis);
+  const resetAnalysis = useAppStore((state) => state.resetAnalysis);
   const completeAnalysis = useAppStore(
     (state) => state.completeAnalysis
   );
 
   const user = useAuthStore((state) => state.user);
+  const authInitialized = useAuthStore((state) => state.initialized);
   const authBusy = useAuthStore((state) => state.busy);
   const initializeAuth = useAuthStore((state) => state.initialize);
   const logout = useAuthStore((state) => state.logout);
+  const previousAuthIdentity = useRef<string | null | undefined>(
+    undefined
+  );
 
   const handleCloseHistory = useCallback(() => {
     setHistoryOpen(false);
@@ -53,6 +58,21 @@ export default function App() {
       void initializeAuth();
     }
   }, [initializeAuth]);
+
+  useEffect(() => {
+    if (!authInitialized) {
+      return;
+    }
+
+    const identity = user?.user_id ?? null;
+    const previous = previousAuthIdentity.current;
+    previousAuthIdentity.current = identity;
+
+    if (previous !== undefined && previous !== identity) {
+      resetAnalysis();
+      message.info("账户状态已变更，请重新选择视频。");
+    }
+  }, [authInitialized, resetAnalysis, user?.user_id]);
 
   usePollingJob(
     video?.video_id ?? null,

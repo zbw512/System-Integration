@@ -5,6 +5,7 @@ import {
   Button,
   Drawer,
   Empty,
+  message,
   Skeleton,
   Tag,
   Typography,
@@ -64,15 +65,34 @@ export function HistoryDrawer({
   onClose,
   onOpenJob,
 }: HistoryDrawerProps) {
+  const activeUserId = useAuthStore(
+    (state) => state.user?.user_id ?? null
+  );
   const [items, setItems] = useState<HistoryItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const loadHistory = useCallback(async () => {
+    const requestUserId = activeUserId;
+    if (!requestUserId) {
+      setItems([]);
+      setLoading(false);
+      setHasLoaded(false);
+      return;
+    }
+
     setLoading(true);
+    setItems([]);
+    setHasLoaded(false);
     setError(null);
     try {
       const response = await getAnalysisHistory(50, 0);
+      if (
+        useAuthStore.getState().user?.user_id !== requestUserId
+      ) {
+        return;
+      }
       setItems(response.items);
     } catch (loadError) {
       if (
@@ -81,20 +101,35 @@ export function HistoryDrawer({
       ) {
         useAuthStore.getState().markSignedOut();
         onClose();
-        setError("登录状态已过期，请重新登录。");
+        message.warning("登录状态已过期，请重新登录。");
         return;
       }
       setError(getErrorMessage(loadError));
     } finally {
-      setLoading(false);
+      if (
+        useAuthStore.getState().user?.user_id === requestUserId
+      ) {
+        setLoading(false);
+        setHasLoaded(true);
+      }
     }
-  }, [onClose]);
+  }, [activeUserId, onClose]);
+
+  useEffect(() => {
+    setItems([]);
+    setLoading(false);
+    setHasLoaded(false);
+    setError(null);
+  }, [activeUserId]);
 
   useEffect(() => {
     if (open) {
       void loadHistory();
     }
   }, [loadHistory, open]);
+
+  const showLoading =
+    loading || (open && Boolean(activeUserId) && !hasLoaded);
 
   return (
     <Drawer
@@ -112,7 +147,7 @@ export function HistoryDrawer({
           <Button
             type="text"
             size="small"
-            loading={loading}
+            loading={showLoading}
             onClick={() => void loadHistory()}
           >
             刷新
@@ -130,7 +165,7 @@ export function HistoryDrawer({
         />
       )}
 
-      {loading && (
+      {showLoading && (
         <div className="history-loading">
           <Skeleton active paragraph={{ rows: 2 }} />
           <Skeleton active paragraph={{ rows: 2 }} />
@@ -138,7 +173,7 @@ export function HistoryDrawer({
         </div>
       )}
 
-      {!loading && !error && items.length === 0 && (
+      {!showLoading && !error && hasLoaded && items.length === 0 && (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
           description={
@@ -151,7 +186,7 @@ export function HistoryDrawer({
         />
       )}
 
-      {!loading && items.length > 0 && (
+      {!showLoading && !error && items.length > 0 && (
         <div className="history-list">
           {items.map((item) => {
             const canOpen =

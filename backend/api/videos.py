@@ -18,9 +18,15 @@ import os
 
 from flask import Blueprint, current_app, jsonify, request, send_file
 
-from api.auth import get_optional_user
+from api.auth import (
+    get_access_context,
+    get_or_create_upload_access,
+    require_user,
+    set_guest_cookie,
+)
 from api.errors import ApiError
 from api.params import parse_int_arg
+from schemas.access import AccessContext
 from schemas.enums import VideoSource
 from services.video_service import VideoService
 
@@ -57,18 +63,19 @@ def upload_video():
             status=400,
             details={"field": "file", "content_type": request.content_type},
         )
-    user = get_optional_user()
-    return _created_response(
-        _service().create_from_upload(
-            upload,
-            user_id=None if user is None else user.user_id,
-        )
+    access, guest_token = get_or_create_upload_access()
+    response = _created_response(
+        _service().create_from_upload(upload, access=access)
     )
+    if guest_token is not None:
+        set_guest_cookie(response, guest_token)
+    return response
 
 
 @videos_bp.post("/register")
 def register_video():
     """Register an existing file that lives inside an allowed import root."""
+    user = require_user()
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict):
         raise ApiError(
@@ -99,14 +106,13 @@ def register_video():
             details={"field": "metadata"},
         )
 
-    user = get_optional_user()
     video = _service().create_from_path(
         payload.get("path"),
         source=VideoSource(source_raw),
         name=payload.get("name"),
         video_id=payload.get("video_id"),
         metadata=metadata,
-        user_id=None if user is None else user.user_id,
+        access=AccessContext(user_id=user.user_id),
     )
     return _created_response(video)
 
@@ -114,6 +120,7 @@ def register_video():
 @videos_bp.get("", strict_slashes=False)
 def list_videos():
     """Paginated list, newest first."""
+    access = get_access_context()
     config = current_app.config["APP_CONFIG"]
     limit = parse_int_arg(
         "limit",
@@ -124,6 +131,7 @@ def list_videos():
     offset = parse_int_arg("offset", 0, minimum=0, maximum=None)
 
     payload = _service().list_videos(
+        access=access,
         limit=limit,
         offset=offset,
         status=request.args.get("status") or None,
@@ -134,7 +142,10 @@ def list_videos():
 
 @videos_bp.get("/<video_id>")
 def get_video(video_id: str):
-    return jsonify(_service().get_video(video_id).to_dict()), 200
+    access = get_access_context()
+    return jsonify(
+        _service().get_video(video_id, access=access).to_dict()
+    ), 200
 
 
 @videos_bp.get("/<video_id>/results")
@@ -160,7 +171,8 @@ def get_video_results(video_id: str):
         )
 
     # Unknown video -> 404 VIDEO_NOT_FOUND (handled by VideoService).
-    video = _service().get_video(video_id)
+    access = get_access_context()
+    video = _service().get_video(video_id, access=access)
     exporter = current_app.extensions["export_service"]
 
     if result_format == "json":
@@ -184,7 +196,11 @@ def get_video_file(video_id: str):
     ``send_file`` with ``conditional=True`` adds ``Range`` / ``ETag`` support so
     the HTML5 ``<video>`` element can seek without downloading the whole file.
     """
-    video, absolute_path = _service().get_stored_file(video_id)
+    access = get_access_context()
+    video, absolute_path = _service().get_stored_file(
+        video_id,
+        access=access,
+    )
     extension = os.path.splitext(absolute_path)[1].lower()
 
     response = send_file(
@@ -194,7 +210,8 @@ def get_video_file(video_id: str):
         download_name=video.name,
         conditional=True,
     )
-    response.headers["Cache-Control"] = "private, max-age=0, must-revalidate"
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Vary"] = "Cookie"
     return response
 
 
@@ -206,10 +223,10 @@ def create_process_job(video_id: str):
     analysis itself runs in the single background worker, so the client is never
     blocked by model latency.
     """
-    user = get_optional_user()
+    access = get_access_context()
     job = current_app.extensions["job_service"].create_video_process_job(
         video_id,
-        user_id=None if user is None else user.user_id,
+        access=access,
     )
     response = jsonify(job.to_dict())
     response.status_code = 202

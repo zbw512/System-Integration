@@ -5,12 +5,13 @@
 基于 Flask 的后端服务，面向「视频 VLM + EEG 多模态学习状态分析」项目。
 接口契约以《前后端接口与数据标准 v1》为准。
 
-> **当前阶段：P0-5（真实 MiniCPM-V 4.6 离线视频分析适配器）**
+> **当前阶段：第二轮初版交付**
 >
 > 已完成：应用骨架、健康检查、服务信息、统一错误响应、配置、日志、SQLite 持久化、
 > 视频上传/登记/列表/详情/受控文件访问、分析任务创建（202）/ 任务查询 / Job 状态机 /
 > 单线程后台执行、结果查询与 JSON/CSV 导出、
-> **真实 MiniCPM-V 4.6 适配器（按需加载、逐帧分类、显式边界）**。
+> 真实 MiniCPM-V 4.6 适配器（按需加载、逐帧分类、显式边界）、
+> 本地账户与会话、匿名访问隔离、个人历史、匿名任务认领和认证安全控制。
 >
 > **未完成**：SAV 批量处理与评价指标（仍缺人工标注）、EEG、跨模态融合、实时流。
 > 默认 `BACKEND_VLM_ADAPTER=mock`；只有切到 `minicpm` 才会加载本地权重。
@@ -84,7 +85,7 @@ cd <project-root>\backend
 
 ```text
 backend/var/
-├── app.db            SQLite 元数据（users、sessions、videos、jobs）
+├── app.db            SQLite 元数据（users、sessions、guest_sessions、videos、jobs）
 ├── app.db-wal        WAL 日志
 └── videos/           上传/登记的视频文件
 ```
@@ -105,15 +106,16 @@ backend/var/
 | POST | `/api/v1/auth/login` | 登录本地账户 | 200 |
 | POST | `/api/v1/auth/logout` | 退出并撤销当前会话 | 200 |
 | GET | `/api/v1/auth/me` | 查询当前会话 | 200 |
+| POST | `/api/v1/auth/claim-anonymous` | 使用当前匿名 Cookie 认领匿名任务，需要登录 | 200 |
 | GET | `/api/v1/history` | 查询当前登录用户的 Job 历史 | 200 |
 | POST | `/api/v1/videos/upload` | 上传视频（`multipart/form-data`，字段 `file`） | 201 |
-| POST | `/api/v1/videos/register` | 登记导入目录内的视频 | 201 |
-| GET | `/api/v1/videos` | 视频列表 | 200 |
-| GET | `/api/v1/videos/{video_id}` | 视频详情 | 200 |
-| GET | `/api/v1/videos/{video_id}/file` | 受控文件访问（支持 `Range`） | 200 / 206 |
+| POST | `/api/v1/videos/register` | 登记导入目录内的视频，需要登录 | 201 |
+| GET | `/api/v1/videos` | 当前用户或匿名会话的视频列表 | 200 |
+| GET | `/api/v1/videos/{video_id}` | 当前主体有权访问的视频详情 | 200 / 404 |
+| GET | `/api/v1/videos/{video_id}/file` | 鉴权后的受控文件访问（支持 `Range`） | 200 / 206 / 404 |
 | **POST** | **`/api/v1/videos/{video_id}/process`** | **创建分析任务** | **202** |
-| **GET** | **`/api/v1/jobs`** | **任务列表** | **200** |
-| **GET** | **`/api/v1/jobs/{job_id}`** | **任务详情** | **200** |
+| **GET** | **`/api/v1/jobs`** | **当前主体有权访问的任务列表** | **200** |
+| **GET** | **`/api/v1/jobs/{job_id}`** | **当前主体有权访问的任务详情** | **200 / 404** |
 | **GET** | **`/api/v1/videos/{video_id}/results`** | **查询/导出已保存的分析结果（`format=json\|csv`）** | **200 / 200(CSV)** |
 
 ### 4.2 视频接口（P0-2，未变）
@@ -422,7 +424,7 @@ vid_5bf8f1443db1,export_clip.mp4,2,2.0,3.0,独立学习,0.75,…,false,mock,mock
 | 模式 | 适配器 | `prediction_source` | 模型加载 | 用途 |
 |---|---|---|---|---|
 | `mock` | `MockVlmAdapter` | `mock` | 不加载 | 验证任务链路（P0-3 起） |
-| `minicpm` | `MiniCPMV46Adapter` | `model` | 首个任务时按需加载并复用 | 真实离线短视频分析（P0-5） |
+| `minicpm` | `MiniCPMV46Adapter` | `model` | 首个任务时按需加载并复用 | 真实离线短视频分析 |
 
 **失败绝不回退**：真实模式任一步出错（模型缺失/加载失败/解码失败/生成失败）都会让 Job
 `failed` 并记录错误码，**不会**返回 mock 标签。
@@ -435,7 +437,7 @@ vid_5bf8f1443db1,export_clip.mp4,2,2.0,3.0,独立学习,0.75,…,false,mock,mock
 | `model.version` / `prompt_version` | `0.1.0-mock` / `mock-scene-v1` |
 | `is_mock` / `evaluation_eligible` | `true` / `false`（Mock 不可参与模型评价） |
 
-### 6.2 真实模式（P0-5）
+### 6.2 真实模式
 
 启用：
 
@@ -550,6 +552,14 @@ python app.py
 | `BACKEND_ENV` / `BACKEND_DEBUG` | `development` / `false` | 环境标识 / 调试 |
 | `BACKEND_LOG_LEVEL` / `BACKEND_LOG_FILE` | `INFO` / 空 | 日志 |
 | `BACKEND_MAX_UPLOAD_MB` | `512` | 上传/导入上限 |
+| `BACKEND_GUEST_SESSION_TTL_HOURS` | `24` | 匿名浏览器访问凭证有效期 |
+| `BACKEND_SESSION_TTL_DAYS` | `14` | 登录会话有效期 |
+| `BACKEND_LOGIN_MAX_FAILURES` | `5` | 登录窗口内最大失败次数 |
+| `BACKEND_LOGIN_WINDOW_SECONDS` | `900` | 登录失败统计窗口 |
+| `BACKEND_LOGIN_BLOCK_SECONDS` | `900` | 登录限流封禁时长 |
+| `BACKEND_REGISTRATION_MAX_ATTEMPTS` | `10` | 注册接口窗口内最大尝试次数 |
+| `BACKEND_REGISTRATION_WINDOW_SECONDS` | `3600` | 注册尝试统计窗口 |
+| `BACKEND_REGISTRATION_TOKEN` | 空 | 可选注册口令 |
 | `BACKEND_DATA_DIR` | `backend/var` | 数据目录 |
 | `BACKEND_DB_PATH` | `<data_dir>/app.db` | 数据库文件 |
 | `BACKEND_VIDEO_SUBDIR` | `videos` | 视频子目录 |
@@ -573,10 +583,10 @@ cd <project-root>\backend
 .\.venv\Scripts\python.exe -m pytest -v
 ```
 
-在隔离环境中的实测结果：
+2026-11-01 最终回归结果：
 
 ```text
-277 passed, 1 skipped
+312 passed, 1 skipped
 ```
 
 > 被跳过的 1 项是 `test_real_vlm_optional.py`：它会加载真实模型，默认跳过；
@@ -585,23 +595,17 @@ cd <project-root>\backend
 全部使用 `tmp_path` 独立数据目录、合成 MP4（148 字节）与 `job_worker_enabled=False` 的确定性队列，
 **不下载真实视频、不加载模型、不依赖网络**（唯一例外是上面那条 opt-in 测试）。
 
-| 测试文件 | 数量 | 覆盖 |
-|---|---:|---|
-| `test_videos_api.py` | 42 | 上传/登记/列表/详情/文件、分页、错误分支、重启持久化 |
-| `test_storage.py` | 28 | 仓储 CRUD/排序/过滤、文件名清洗、路径越界、原子写 |
-| `test_system.py` | 27 | `/health`、`/info`、统一错误、请求 ID、评价资格规则 |
-| `test_jobs_api.py` | 26 | 任务创建 202/404/409、查询、分页过滤、完成/失败、一致性、重启 |
-| `test_results_api.py` | 23 | JSON/CSV 结果、与 DB 一致、CSV 转义/BOM、404/400/409、无副作用 |
-| **`test_minicpm_adapter.py`** | **27** | 适配器选择、配置校验、模型缺失/加载/生成失败、不回退 mock、Job 集成 |
-| `test_mock_adapter.py` | 17 | Mock 标记、时间段合法性、时长未知拒绝 |
-| `test_job_runner.py` | 16 | queued→running→completed、失败路径、非法迁移、进度边界 |
-| **`test_scene_parse.py`** | **30** | 标签解析（含中文/异常输出）、分段合并、边界与置信度策略 |
-| **`test_frames.py`** | **16** | 真实解码（PyAV 生成视频）、采样上限、时间戳守卫 |
-| `test_segment.py` | 12 | Segment 时间/置信度/标签校验 |
-| `test_media_probe.py` | 9 | `ftyp` 嗅探、`mvhd` 时长、非法容器 |
-| `test_config.py` | 4 | 配置默认值与校验 |
-| `test_real_vlm_optional.py` | **1（默认跳过）** | 真实模型加载 + 短视频分析（opt-in） |
-| **合计** | **277 通过 + 1 跳过** | |
+| 测试文件 | 覆盖 |
+|---|---|
+| `test_videos_api.py` / `test_jobs_api.py` / `test_results_api.py` | 上传、任务、播放文件、结果和错误契约 |
+| `test_auth_security.py` / `test_auth_history.py` | 密码、会话、Cookie、限流、退出和历史 |
+| `test_access_isolation.py` / `test_legacy_ownership.py` | 用户/匿名隔离、越权拦截和旧数据兼容 |
+| `test_guest_claim.py` | 匿名任务认领、重复认领和跨账户隔离 |
+| `test_job_runner.py` / `test_minicpm_adapter.py` | 状态机、单调进度去重和 MiniCPM 适配器 |
+| `test_frames.py` / `test_scene_parse.py` / `test_segment.py` | 帧采样、标签解析和 Segment 校验 |
+| `test_storage.py` / `test_media_probe.py` / `test_system.py` | 存储、容器解析、健康检查和统一错误 |
+| `test_config.py` | 配置默认值、覆盖和安全参数校验 |
+| `test_real_vlm_optional.py` | 真实模型手动验收，默认跳过 |
 
 ---
 
@@ -625,24 +629,32 @@ backend/
 │   ├── params.py            共享分页参数解析
 │   ├── system.py            /health、/info
 │   ├── videos.py            视频 5 个端点 + process
-│   └── jobs.py              任务列表 / 详情
+│   ├── jobs.py              任务列表 / 详情
+│   ├── auth.py              注册、登录、退出、会话与匿名认领
+│   └── history.py           当前用户历史
 ├── schemas/
 │   ├── enums.py             标准枚举 + 评价资格规则
 │   ├── video.py             Video 模型
 │   ├── segment.py           Segment 校验
-│   └── job.py               Job 模型 + 状态/进度约束
+│   ├── job.py               Job 模型 + 状态/进度约束
+│   ├── user.py              用户模型
+│   └── access.py            用户/匿名访问上下文
 ├── services/
 │   ├── errors.py            领域错误
 │   ├── media_probe.py       容器嗅探 + mvhd 时长
 │   ├── video_service.py     视频业务
 │   ├── job_service.py       任务创建/查询/重复策略
 │   ├── export_service.py    结果 JSON/CSV 导出（只读持久化数据）
-│   └── task_runner.py       单线程队列执行器 + 状态机
+│   ├── task_runner.py       单线程队列执行器 + 状态机 + 进度去重
+│   ├── auth_service.py      密码、会话、限流和账户
+│   └── guest_session_service.py 匿名会话与认领
 ├── storage/
 │   ├── db.py                SQLite 连接/建表/ping
 │   ├── files.py             受限路径/原子写/sha256
 │   └── repositories.py      videos 与 jobs 仓储（含条件状态迁移）
-├── tests/                   14 个测试文件 + 合成 MP4 工厂 + 真实视频工厂
+├── migrations/              版本化数据库迁移
+├── migrations/              版本化数据迁移
+├── tests/                   19 个测试文件 + 合成 MP4 工厂 + 真实视频工厂
 ├── var/                     运行期数据（gitignored）
 └── deliverables/            每轮交付 zip（gitignored）
 ```
@@ -651,7 +663,7 @@ backend/
 
 ## 11. 已实现 / 未实现
 
-### 已实现（P0-3 实际验证）
+### 已实现
 
 - [x] `POST /videos/{id}/process` → 202 + Job，`Location` 头
 - [x] `GET /jobs`（`limit`/`offset`/`status`/`video_id`/`job_type`）、`GET /jobs/{id}`
@@ -669,7 +681,12 @@ backend/
 - [x] **真实模型验收**：3 s / 752 KB 真实片段端到端完成，`prediction_source=model`、`is_mock=false`
 - [x] **失败不回退 mock**：模型缺失/加载/解码/生成失败均使任务 `failed` 并记录错误码
 - [x] **未分析/运行中/失败的视频导出返回 409 `VIDEO_NOT_PROCESSED`**（不伪造成功）
-- [x] **277 项自动化测试通过 + 1 项 opt-in 真实模型测试**
+- [x] 本地账户、PBKDF2 密码摘要、HttpOnly 会话、登录限流和可选注册口令
+- [x] 用户/匿名 Video、Job、结果和文件访问隔离
+- [x] 登录或注册时安全认领当前匿名会话，已认领会话不可重复或转移
+- [x] 个人历史持久化、会话恢复和历史结果重新载入
+- [x] 单调任务进度更新，重复和倒退进度事件不会写入数据库
+- [x] **312 项自动化测试通过 + 1 项 opt-in 真实模型测试**
 
 ### 未实现（后续阶段）
 
@@ -710,8 +727,13 @@ backend/
 17. CSV 固定带 **UTF-8 BOM**；如果下游程序不希望有 BOM，需要自行 `utf-8-sig` 解码后处理。
 18. 导出只读当前结果，**不保留历史版本**；重新分析会覆盖旧结果（见第 11 条）。
 19. 预览帧与原始视频内容属于学生画面数据：`metadata` 只记录时间戳/标签/依据，不写日志、不入库原始帧。
-20. 本地账户使用 PBKDF2-SHA256 和 HttpOnly、SameSite=Lax 会话 Cookie；正式部署仍需 HTTPS、登录限流和会话审计。为兼容未登录 VLM 流程，视频、Job 详情和结果接口仍保持全局可访问，个人历史接口本身按 `user_id` 隔离。
-21. `videos.user_id` 与 `jobs.user_id` 是可空内部字段；旧匿名记录不会被归到任何账户。
+20. 本地账户使用 PBKDF2-SHA256 和 HttpOnly、SameSite=Lax 会话 Cookie；匿名浏览器使用独立随机令牌，数据库只保存 SHA-256 摘要。登录和注册已有限流，正式部署仍需 HTTPS、可信代理配置和会话审计。
+21. `videos` 与 `jobs` 的归属为 `user_id` 或 `guest_id` 二选一。旧 `NULL/NULL` 记录保留在数据库中，但默认不可通过普通 HTTP API 访问，也不会被自动归到任何账户。
+22. `POST /videos/register` 涉及服务器本地路径，因此不再允许匿名调用；普通 multipart 上传、VLM 分析、播放和时间轴仍支持匿名用户。
+23. 密码使用 PBKDF2-SHA256、独立随机盐和 600,000 次迭代；未知用户登录也会执行等时密码摘要校验。登录失败按客户端和账户分别限流，成功登录会清空对应失败计数并轮换当前会话。
+24. 设置 `BACKEND_REGISTRATION_TOKEN` 后，`POST /auth/register` 必须携带 `X-Registration-Token`；留空时保持开放的本地注册。
+25. 登录和注册成功时会检查当前浏览器的匿名 Cookie，并在一个事务中把该匿名会话的 Video/Job 转移到当前用户，随后撤销匿名会话并清除匿名 Cookie。`POST /auth/claim-anonymous` 可在已登录状态下重试认领。
+26. 认领只依赖服务端验证的匿名令牌和登录用户上下文，不使用 Video ID 或 Job ID 作为授权凭证；已认领会话不能重复使用，也不能转移给其他账户。
 
 ---
 

@@ -168,15 +168,6 @@ class MiniCPMV46Adapter(VlmAdapter):
                     round(0.35 + 0.4 * (position + 1) / total, 3),
                 )
 
-
-
-            if reporter is not None:
-                # Inference spans 0.35 -> 0.75; the runner then reports parsing.
-                reporter(
-                    JobStage.INFERENCE.value,
-                    round(0.35 + 0.4 * (position + 1) / total, 3),
-                )
-
         duration_s = sampling.duration_s if sampling.duration_s is not None else request.duration_s
         segments = build_segments(frame_labels, duration_s=duration_s)
 

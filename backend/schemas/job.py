@@ -47,6 +47,7 @@ class Job:
     model: dict[str, Any] | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
     user_id: str | None = None
+    guest_id: str | None = None
 
     schema_version: str = SCHEMA_VERSION
 
@@ -62,6 +63,11 @@ class Job:
             raise JobValidationError("result 必须是对象或 null", field_name="result")
         if self.error is not None and not isinstance(self.error, dict):
             raise JobValidationError("error 必须是对象或 null", field_name="error")
+        if self.user_id is not None and self.guest_id is not None:
+            raise JobValidationError(
+                "Job 不能同时属于登录用户和匿名会话",
+                field_name="guest_id",
+            )
 
         # Status/stage/progress invariants (kept in one place so the runner and
         # the repository cannot drift apart).

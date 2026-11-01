@@ -119,6 +119,10 @@ export interface AuthUser {
 export interface AuthResponse {
   authenticated: boolean;
   user: AuthUser | null;
+  guest_claim?: {
+    videos: number;
+    jobs: number;
+  };
 }
 
 export interface HistoryItem {

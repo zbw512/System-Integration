@@ -105,11 +105,22 @@ export const useAppStore = create<AppStore>((set) => ({
     }),
 
   setAnalysisProgress: (progress, text) =>
-    set({
-      analysisProgress: clampPercent(progress),
-      progressText: text,
-      status: "analyzing",
-      error: null,
+    set((state) => {
+      const analysisProgress = clampPercent(progress);
+      if (
+        state.status === "analyzing" &&
+        state.analysisProgress === analysisProgress &&
+        state.progressText === text &&
+        state.error === null
+      ) {
+        return state;
+      }
+      return {
+        analysisProgress,
+        progressText: text,
+        status: "analyzing",
+        error: null,
+      };
     }),
 
   completeAnalysis: (video, segments) =>

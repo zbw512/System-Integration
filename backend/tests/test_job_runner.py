@@ -165,6 +165,56 @@ def test_adapter_error_fails_job_and_video(client, drain):
     assert video["evaluation_eligible"] is False
 
 
+def test_runner_deduplicates_repeated_and_regressing_progress(
+    app,
+    drain,
+    monkeypatch,
+):
+    class RepeatedProgressAdapter(StubAdapter):
+        uses_frame_sampling = True
+
+        def analyze(self, request: AnalysisRequest) -> AnalysisOutput:
+            assert request.on_progress is not None
+            request.on_progress("sampling_frames", 0.2)
+            request.on_progress("sampling_frames", 0.2)
+            request.on_progress("inference", 0.5)
+            request.on_progress("inference", 0.5)
+            request.on_progress("inference", 0.4)
+            return mock_output(3.0)
+
+    app.extensions["vlm_adapter"] = RepeatedProgressAdapter(
+        output=mock_output(3.0)
+    )
+    client = app.test_client()
+    updates: list[tuple[str, float]] = []
+    runner = app.extensions["job_runner"]
+    original_update = runner._jobs.update_progress
+
+    def capture_update(connection, job_id, *, stage, progress):
+        updates.append((stage, progress))
+        return original_update(
+            connection,
+            job_id,
+            stage=stage,
+            progress=progress,
+        )
+
+    monkeypatch.setattr(runner._jobs, "update_progress", capture_update)
+    video_id = upload_video(client)
+    job_id = start_job(client, video_id).get_json()["job_id"]
+    drain()
+
+    assert updates == [
+        ("sampling_frames", 0.2),
+        ("inference", 0.5),
+        ("parsing", 0.8),
+        ("saving", 0.9),
+    ]
+    job = client.get(f"/api/v1/jobs/{job_id}").get_json()
+    assert job["status"] == "completed"
+    assert job["progress"] == 1.0
+
+
 def test_unexpected_adapter_exception_becomes_internal_error(client, drain):
     client.application.extensions["vlm_adapter"] = StubAdapter(
         error=RuntimeError("secret internal detail")
