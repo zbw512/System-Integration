@@ -20,6 +20,7 @@ from typing import Any, Mapping
 
 from common.timeutil import utc_timestamp
 from config import Config
+from schemas.access import AccessContext
 from schemas.enums import PredictionSource, VideoSource, VideoStatus, enum_values
 from schemas.video import Video
 from services.errors import (
@@ -64,8 +65,10 @@ class VideoService:
     # ------------------------------------------------------------------ #
     # Public API
     # ------------------------------------------------------------------ #
-    def create_from_upload(self, upload, *, user_id: str | None = None) -> Video:
+    def create_from_upload(self, upload, *, access: AccessContext) -> Video:
         """Persist a multipart upload and return the new ``registered`` record."""
+        if not access.is_identified:
+            raise InvalidVideoRequestError("缺少有效的上传访问身份")
         display_name = storage_files.sanitize_name(getattr(upload, "filename", "") or "")
         if not display_name:
             raise InvalidVideoRequestError("缺少有效的上传文件名", details={"field": "file"})
@@ -109,7 +112,8 @@ class VideoService:
                 segments=[],
                 metadata=metadata,
                 storage_path=dest_rel,
-                user_id=user_id,
+                user_id=access.user_id,
+                guest_id=access.guest_id,
             )
             return self._repository.create(video)
         except BaseException:
@@ -125,9 +129,11 @@ class VideoService:
         name: str | None = None,
         video_id: str | None = None,
         metadata: Mapping[str, Any] | None = None,
-        user_id: str | None = None,
+        access: AccessContext,
     ) -> Video:
         """Register a file that already exists inside an allowed import root."""
+        if not access.is_authenticated:
+            raise InvalidVideoRequestError("登记本地文件需要登录")
         if source not in REGISTERABLE_SOURCES:
             raise InvalidVideoRequestError(
                 "source 必须是 local_path 或 sav_clip",
@@ -199,7 +205,8 @@ class VideoService:
                 segments=[],
                 metadata=merged_metadata,
                 storage_path=dest_rel,
-                user_id=user_id,
+                user_id=access.user_id,
+                guest_id=access.guest_id,
             )
             return self._repository.create(video)
         except BaseException:
@@ -209,6 +216,7 @@ class VideoService:
     def list_videos(
         self,
         *,
+        access: AccessContext,
         limit: int,
         offset: int,
         status: str | None = None,
@@ -235,8 +243,13 @@ class VideoService:
                     details={"field": "source", "allowed": enum_values(VideoSource)},
                 ) from exc
 
-        videos, total = self._repository.list(
-            limit=limit, offset=offset, status=status_value, source=source_value
+        videos, total = self._repository.list_for_access(
+            limit=limit,
+            offset=offset,
+            user_id=access.user_id,
+            guest_id=access.guest_id,
+            status=status_value,
+            source=source_value,
         )
         items = [video.to_dict() for video in videos]
 
@@ -253,15 +266,24 @@ class VideoService:
             "videos": items,
         }
 
-    def get_video(self, video_id: str) -> Video:
-        video = self._repository.get(video_id)
+    def get_video(self, video_id: str, *, access: AccessContext) -> Video:
+        video = self._repository.get_for_access(
+            video_id,
+            user_id=access.user_id,
+            guest_id=access.guest_id,
+        )
         if video is None:
             raise VideoNotFoundError(video_id)
         return video
 
-    def get_stored_file(self, video_id: str) -> tuple[Video, str]:
+    def get_stored_file(
+        self,
+        video_id: str,
+        *,
+        access: AccessContext,
+    ) -> tuple[Video, str]:
         """Return the record plus the absolute path of its stored file."""
-        video = self.get_video(video_id)
+        video = self.get_video(video_id, access=access)
         if not video.storage_path:
             raise StoredFileMissingError(details={"video_id": video_id})
 

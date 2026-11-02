@@ -20,16 +20,18 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from common.timeutil import utc_timestamp
+from config import Config
 from services.errors import (
+    AuthenticationRateLimitedError,
     InvalidAccountRequestError,
     InvalidCredentialsError,
+    RegistrationDeniedError,
     UsernameTakenError,
 )
 from schemas.user import User
 from storage.db import connect
 
 SESSION_COOKIE_NAME = "learning_state_session"
-SESSION_TTL_DAYS = 14
 
 _PASSWORD_ALGORITHM = "pbkdf2_sha256"
 _PASSWORD_ITERATIONS = 600_000
@@ -97,6 +99,9 @@ def _hash_password(password: str) -> str:
     )
 
 
+_DUMMY_PASSWORD_HASH = _hash_password("dummy-password-for-constant-time-login")
+
+
 def _verify_password(password: str, encoded: str) -> bool:
     try:
         algorithm, iterations_raw, salt_raw, digest_raw = encoded.split("$", 3)
@@ -125,6 +130,14 @@ def _token_hash(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+def _rate_key(scope: str, value: str) -> str:
+    return hashlib.sha256(f"{scope}\0{value}".encode("utf-8")).hexdigest()
+
+
+def _parse_utc(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
 def _row_to_user(row: sqlite3.Row) -> User:
     return User(
         user_id=row["user_id"],
@@ -137,10 +150,13 @@ def _row_to_user(row: sqlite3.Row) -> User:
 class AuthService:
     """Register users, verify credentials and manage opaque sessions."""
 
-    session_ttl_days = SESSION_TTL_DAYS
+    def __init__(self, config: Config) -> None:
+        self._config = config
+        self._db_path = config.database_path
 
-    def __init__(self, db_path: str) -> None:
-        self._db_path = db_path
+    @property
+    def session_ttl_days(self) -> int:
+        return self._config.session_ttl_days
 
     def register(
         self,
@@ -148,7 +164,23 @@ class AuthService:
         username: object,
         password: object,
         display_name: object = None,
+        registration_token: object = None,
+        client_id: str | None = None,
     ) -> User:
+        self._consume_registration_attempt(client_id or "unknown")
+        expected_token = self._config.registration_token
+        if expected_token is not None:
+            supplied_token = (
+                registration_token
+                if isinstance(registration_token, str)
+                else ""
+            )
+            if not hmac.compare_digest(
+                supplied_token.encode("utf-8"),
+                expected_token.encode("utf-8"),
+            ):
+                raise RegistrationDeniedError()
+
         normalized_username = _normalize_username(username)
         valid_password = _validate_password(password)
         normalized_display_name = _normalize_display_name(
@@ -181,20 +213,48 @@ class AuthService:
             raise UsernameTakenError() from exc
         return user
 
-    def authenticate(self, *, username: object, password: object) -> User:
-        normalized_username = _normalize_username(username)
-        if not isinstance(password, str) or not password:
+    def authenticate(
+        self,
+        *,
+        username: object,
+        password: object,
+        client_id: str | None = None,
+    ) -> User:
+        normalized_username: str | None = None
+        if isinstance(username, str):
+            try:
+                normalized_username = _normalize_username(username)
+            except InvalidAccountRequestError:
+                normalized_username = None
+
+        account_identity = (
+            normalized_username.casefold()
+            if normalized_username is not None
+            else str(username)[:64]
+        )
+        throttle_keys = self._login_throttle_keys(
+            client_id or "unknown",
+            account_identity,
+        )
+        self._raise_if_login_blocked(throttle_keys)
+
+        row = None
+        if normalized_username is not None:
+            with connect(self._db_path) as connection:
+                row = connection.execute(
+                    "SELECT user_id, username, display_name, created_at, password_hash "
+                    "FROM users WHERE username_key = ?",
+                    (normalized_username.casefold(),),
+                ).fetchone()
+
+        candidate_password = password if isinstance(password, str) else ""
+        encoded_hash = row["password_hash"] if row is not None else _DUMMY_PASSWORD_HASH
+        password_valid = _verify_password(candidate_password, encoded_hash)
+        if row is None or not password_valid:
+            self._record_login_failure(throttle_keys)
             raise InvalidCredentialsError()
 
-        with connect(self._db_path) as connection:
-            row = connection.execute(
-                "SELECT user_id, username, display_name, created_at, password_hash "
-                "FROM users WHERE username_key = ?",
-                (normalized_username.casefold(),),
-            ).fetchone()
-
-        if row is None or not _verify_password(password, row["password_hash"]):
-            raise InvalidCredentialsError()
+        self._clear_login_failures(throttle_keys)
         return _row_to_user(row)
 
     def create_session(self, user_id: str) -> str:
@@ -239,4 +299,144 @@ class AuthService:
             connection.execute(
                 "DELETE FROM sessions WHERE token_hash = ?",
                 (_token_hash(token),),
+            )
+
+    # ------------------------------------------------------------------ #
+    # Authentication throttling
+    # ------------------------------------------------------------------ #
+    @staticmethod
+    def _login_throttle_keys(
+        client_id: str,
+        account_identity: str,
+    ) -> tuple[str, str]:
+        return (
+            _rate_key("login-client", client_id),
+            _rate_key("login-account", account_identity),
+        )
+
+    def _raise_if_login_blocked(self, keys: tuple[str, str]) -> None:
+        now = datetime.now(timezone.utc)
+        with connect(self._db_path) as connection:
+            for key in keys:
+                row = connection.execute(
+                    "SELECT window_started_at, blocked_until "
+                    "FROM auth_rate_limits WHERE key_hash = ?",
+                    (key,),
+                ).fetchone()
+                if row is None:
+                    continue
+                blocked_until = row["blocked_until"]
+                if blocked_until is not None and _parse_utc(blocked_until) > now:
+                    raise AuthenticationRateLimitedError()
+                window_started = _parse_utc(row["window_started_at"])
+                if (
+                    window_started
+                    + timedelta(seconds=self._config.login_window_seconds)
+                    <= now
+                ):
+                    connection.execute(
+                        "DELETE FROM auth_rate_limits WHERE key_hash = ?",
+                        (key,),
+                    )
+
+    def _record_login_failure(self, keys: tuple[str, str]) -> None:
+        now = datetime.now(timezone.utc)
+        now_text = now.isoformat(timespec="seconds").replace("+00:00", "Z")
+        with connect(self._db_path) as connection:
+            for key in keys:
+                row = connection.execute(
+                    "SELECT attempts, window_started_at "
+                    "FROM auth_rate_limits WHERE key_hash = ?",
+                    (key,),
+                ).fetchone()
+                attempts = 1
+                window_started = now
+                if row is not None:
+                    stored_window = _parse_utc(row["window_started_at"])
+                    if (
+                        stored_window
+                        + timedelta(seconds=self._config.login_window_seconds)
+                        > now
+                    ):
+                        attempts = int(row["attempts"]) + 1
+                        window_started = stored_window
+
+                blocked_until = None
+                if attempts >= self._config.login_max_failures:
+                    blocked_until = (
+                        now + timedelta(seconds=self._config.login_block_seconds)
+                    ).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+                connection.execute(
+                    "INSERT INTO auth_rate_limits "
+                    "(key_hash, attempts, window_started_at, blocked_until, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?) "
+                    "ON CONFLICT(key_hash) DO UPDATE SET "
+                    "attempts = excluded.attempts, "
+                    "window_started_at = excluded.window_started_at, "
+                    "blocked_until = excluded.blocked_until, "
+                    "updated_at = excluded.updated_at",
+                    (
+                        key,
+                        attempts,
+                        window_started.isoformat(timespec="seconds").replace(
+                            "+00:00", "Z"
+                        ),
+                        blocked_until,
+                        now_text,
+                    ),
+                )
+
+    def _clear_login_failures(self, keys: tuple[str, str]) -> None:
+        with connect(self._db_path) as connection:
+            connection.executemany(
+                "DELETE FROM auth_rate_limits WHERE key_hash = ?",
+                ((key,) for key in keys),
+            )
+
+    def _consume_registration_attempt(self, client_id: str) -> None:
+        now = datetime.now(timezone.utc)
+        key = _rate_key("register-client", client_id)
+        with connect(self._db_path) as connection:
+            row = connection.execute(
+                "SELECT attempts, window_started_at "
+                "FROM auth_rate_limits WHERE key_hash = ?",
+                (key,),
+            ).fetchone()
+            attempts = 1
+            window_started = now
+            if row is not None:
+                stored_window = _parse_utc(row["window_started_at"])
+                if (
+                    stored_window
+                    + timedelta(
+                        seconds=self._config.registration_window_seconds
+                    )
+                    > now
+                ):
+                    attempts = int(row["attempts"]) + 1
+                    window_started = stored_window
+
+            if attempts > self._config.registration_max_attempts:
+                raise AuthenticationRateLimitedError(
+                    "创建账户尝试过于频繁，请稍后重试"
+                )
+
+            connection.execute(
+                "INSERT INTO auth_rate_limits "
+                "(key_hash, attempts, window_started_at, blocked_until, updated_at) "
+                "VALUES (?, ?, ?, NULL, ?) "
+                "ON CONFLICT(key_hash) DO UPDATE SET "
+                "attempts = excluded.attempts, "
+                "window_started_at = excluded.window_started_at, "
+                "blocked_until = NULL, "
+                "updated_at = excluded.updated_at",
+                (
+                    key,
+                    attempts,
+                    window_started.isoformat(timespec="seconds").replace(
+                        "+00:00", "Z"
+                    ),
+                    now.isoformat(timespec="seconds").replace("+00:00", "Z"),
+                ),
             )

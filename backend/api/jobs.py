@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from flask import Blueprint, current_app, jsonify, request
 
+from api.auth import get_access_context
 from api.params import parse_int_arg
 from services.job_service import JobService
 
@@ -33,8 +34,10 @@ def list_jobs():
         maximum=config.list_max_limit,
     )
     offset = parse_int_arg("offset", 0, minimum=0, maximum=None)
+    access = get_access_context()
 
     payload = _service().list_jobs(
+        access=access,
         limit=limit,
         offset=offset,
         status=request.args.get("status") or None,
@@ -46,4 +49,7 @@ def list_jobs():
 
 @jobs_bp.get("/<job_id>")
 def get_job(job_id: str):
-    return jsonify(_service().get_job(job_id).to_dict()), 200
+    access = get_access_context()
+    return jsonify(
+        _service().get_job(job_id, access=access).to_dict()
+    ), 200

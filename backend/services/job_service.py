@@ -15,6 +15,7 @@ import uuid
 
 from common.timeutil import utc_timestamp
 from config import Config
+from schemas.access import AccessContext
 from schemas.enums import JobStage, JobStatus, JobType, enum_values
 from schemas.job import Job
 from services.errors import (
@@ -49,10 +50,14 @@ class JobService:
         self,
         video_id: str,
         *,
-        user_id: str | None = None,
+        access: AccessContext,
     ) -> Job:
         """Queue a ``video_process`` job for an existing video."""
-        video = self._videos.get(video_id)
+        video = self._videos.get_for_access(
+            video_id,
+            user_id=access.user_id,
+            guest_id=access.guest_id,
+        )
         if video is None:
             raise VideoNotFoundError(video_id)
 
@@ -72,7 +77,8 @@ class JobService:
             video_id=video_id,
             created_at=utc_timestamp(),
             metadata={"requested_from": "api"},
-            user_id=user_id,
+            user_id=video.user_id,
+            guest_id=video.guest_id,
         )
 
         # One transaction: job row + video status change.
@@ -87,8 +93,12 @@ class JobService:
     # ------------------------------------------------------------------ #
     # Reads
     # ------------------------------------------------------------------ #
-    def get_job(self, job_id: str) -> Job:
-        job = self._jobs.get(job_id)
+    def get_job(self, job_id: str, *, access: AccessContext) -> Job:
+        job = self._jobs.get_for_access(
+            job_id,
+            user_id=access.user_id,
+            guest_id=access.guest_id,
+        )
         if job is None:
             raise JobNotFoundError(job_id)
         return job
@@ -96,6 +106,7 @@ class JobService:
     def list_jobs(
         self,
         *,
+        access: AccessContext,
         limit: int,
         offset: int,
         status: str | None = None,
@@ -105,9 +116,11 @@ class JobService:
         status_value = self._validate_enum("status", status, JobStatus)
         job_type_value = self._validate_enum("job_type", job_type, JobType)
 
-        jobs, total = self._jobs.list(
+        jobs, total = self._jobs.list_for_access(
             limit=limit,
             offset=offset,
+            user_id=access.user_id,
+            guest_id=access.guest_id,
             status=status_value,
             video_id=video_id or None,
             job_type=job_type_value,

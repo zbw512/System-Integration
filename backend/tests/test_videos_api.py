@@ -46,6 +46,18 @@ def upload(client, *, name: str = "lesson_clip.mp4", payload: bytes | None = Non
     return client.post("/api/v1/videos/upload", data=data, content_type="multipart/form-data")
 
 
+def authenticate(client, username: str = "video_test_user") -> None:
+    response = client.post(
+        "/api/v1/auth/register",
+        json={
+            "username": username,
+            "password": "video-test-password",
+            "display_name": username,
+        },
+    )
+    assert response.status_code == 201
+
+
 # --------------------------------------------------------------------------- #
 # Upload
 # --------------------------------------------------------------------------- #
@@ -175,6 +187,7 @@ def test_rejected_upload_leaves_no_file_behind(client, config):
 # Register (local_path / sav_clip)
 # --------------------------------------------------------------------------- #
 def test_register_sav_clip_uses_sav_naming(client, import_root):
+    authenticate(client)
     source = write_minimal_mp4(import_root / "20181016_05_1064.mp4", 3.0)
 
     response = client.post(
@@ -193,6 +206,7 @@ def test_register_sav_clip_uses_sav_naming(client, import_root):
 
 
 def test_register_copies_file_into_data_dir(client, import_root, config):
+    authenticate(client)
     source = write_minimal_mp4(import_root / "clip_a.mp4")
 
     body = client.post(
@@ -207,6 +221,7 @@ def test_register_copies_file_into_data_dir(client, import_root, config):
 
 
 def test_register_accepts_explicit_video_id(client, import_root):
+    authenticate(client)
     source = write_minimal_mp4(import_root / "clip_b.mp4")
 
     body = client.post(
@@ -218,6 +233,7 @@ def test_register_accepts_explicit_video_id(client, import_root):
 
 
 def test_register_duplicate_returns_conflict(client, import_root):
+    authenticate(client)
     source = write_minimal_mp4(import_root / "20181016_05_1064.mp4")
     payload = {"source": "sav_clip", "path": str(source)}
 
@@ -229,6 +245,7 @@ def test_register_duplicate_returns_conflict(client, import_root):
 
 
 def test_register_path_outside_allowed_roots_is_rejected(client, tmp_path):
+    authenticate(client)
     outside = write_minimal_mp4(tmp_path / "outside" / "secret.mp4")
 
     response = client.post(
@@ -253,6 +270,7 @@ def test_register_path_outside_allowed_roots_is_rejected(client, tmp_path):
     ],
 )
 def test_register_rejects_invalid_payloads(client, payload):
+    authenticate(client)
     response = client.post("/api/v1/videos/register", json=payload)
 
     # All of these are client errors; the exact code depends on which field is
@@ -263,6 +281,7 @@ def test_register_rejects_invalid_payloads(client, payload):
 
 
 def test_register_rejects_invalid_video_id(client, import_root):
+    authenticate(client)
     source = write_minimal_mp4(import_root / "clip_c.mp4")
 
     response = client.post(
@@ -275,6 +294,7 @@ def test_register_rejects_invalid_video_id(client, import_root):
 
 
 def test_register_metadata_does_not_expose_host_paths(client, import_root):
+    authenticate(client)
     source = write_minimal_mp4(import_root / "clip_d.mp4")
 
     response = client.post(
@@ -333,6 +353,7 @@ def test_list_rejects_invalid_enum_filters(client):
 
 
 def test_list_filters_by_source(client, import_root):
+    authenticate(client)
     upload(client)
     write_minimal_mp4(import_root / "sav_one.mp4")
     client.post(
@@ -370,7 +391,7 @@ def test_file_endpoint_serves_exact_bytes(client):
     assert response.status_code == 200
     assert response.data == payload
     assert response.mimetype == "video/mp4"
-    assert "no-store" not in response.headers.get("Cache-Control", "")
+    assert "no-store" in response.headers.get("Cache-Control", "")
 
 
 def test_file_endpoint_supports_range_requests(client):
@@ -427,11 +448,21 @@ def test_video_survives_application_restart(tmp_path: Path):
     )
 
     first_app = create_app(config)
-    uploaded = upload(first_app.test_client()).get_json()
+    first_client = first_app.test_client()
+    authenticate(first_client)
+    uploaded = upload(first_client).get_json()
 
     # A brand-new application over the same data directory == a restart.
     second_app = create_app(config)
     second_client = second_app.test_client()
+    login = second_client.post(
+        "/api/v1/auth/login",
+        json={
+            "username": "video_test_user",
+            "password": "video-test-password",
+        },
+    )
+    assert login.status_code == 200
 
     detail = second_client.get(f"/api/v1/videos/{uploaded['video_id']}")
     assert detail.status_code == 200

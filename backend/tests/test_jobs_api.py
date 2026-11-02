@@ -55,6 +55,18 @@ def start_job(client, video_id: str):
     return client.post(f"/api/v1/videos/{video_id}/process")
 
 
+def register_user(client, username: str = "job_test_user") -> None:
+    response = client.post(
+        "/api/v1/auth/register",
+        json={
+            "username": username,
+            "password": "job-test-password",
+            "display_name": username,
+        },
+    )
+    assert response.status_code == 201
+
+
 # --------------------------------------------------------------------------- #
 # Creation
 # --------------------------------------------------------------------------- #
@@ -358,11 +370,17 @@ def test_completed_job_survives_restart(tmp_path: Path):
     )
     first_app = create_app(config)
     first_client = first_app.test_client()
+    register_user(first_client)
     video_id = upload_video(first_client)
     job_id = start_job(first_client, video_id).get_json()["job_id"]
     first_app.extensions["job_runner"].run_until_idle()
 
     second_client = create_app(config).test_client()
+    login = second_client.post(
+        "/api/v1/auth/login",
+        json={"username": "job_test_user", "password": "job-test-password"},
+    )
+    assert login.status_code == 200
 
     job = second_client.get(f"/api/v1/jobs/{job_id}").get_json()
     assert job["status"] == "completed"
@@ -385,11 +403,17 @@ def test_restart_fails_interrupted_jobs_instead_of_pretending(tmp_path: Path):
     )
     first_app = create_app(config)
     first_client = first_app.test_client()
+    register_user(first_client)
     video_id = upload_video(first_client)
     job_id = start_job(first_client, video_id).get_json()["job_id"]
     # Simulate a crash: the job stays queued and is never drained.
 
     second_client = create_app(config).test_client()
+    login = second_client.post(
+        "/api/v1/auth/login",
+        json={"username": "job_test_user", "password": "job-test-password"},
+    )
+    assert login.status_code == 200
 
     job = second_client.get(f"/api/v1/jobs/{job_id}").get_json()
     assert job["status"] == "failed"

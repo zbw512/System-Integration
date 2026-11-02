@@ -145,13 +145,19 @@ class ExportService:
         )
         if status != VideoStatus.PROCESSED.value:
             raise VideoNotProcessedError(
-                video.video_id, status, self._latest_job_context(video.video_id)
+                video.video_id, status, self._latest_job_context(video)
             )
 
-    def _latest_job_context(self, video_id: str) -> dict[str, Any] | None:
+    def _latest_job_context(self, video: Video) -> dict[str, Any] | None:
         """Most recent job for the video, used to explain why there is no result."""
         try:
-            jobs, _total = self._jobs.list(limit=1, offset=0, video_id=video_id)
+            jobs, _total = self._jobs.list_for_access(
+                limit=1,
+                offset=0,
+                user_id=video.user_id,
+                guest_id=video.guest_id,
+                video_id=video.video_id,
+            )
         except Exception:  # pragma: no cover - defensive: never fail the error path
             return None
         if not jobs:

@@ -31,6 +31,7 @@ from flask import Flask, Response, g, request
 
 from api import register_blueprints
 from api.errors import (
+    ApiError,
     REQUEST_ID_PATTERN,
     get_request_id,
     new_request_id,
@@ -41,6 +42,7 @@ from config import Config
 from logging_setup import configure_logging
 from services.export_service import ExportService
 from services.auth_service import AuthService
+from services.guest_session_service import GuestSessionService
 from services.job_service import JobService
 from services.task_runner import JobRunner
 from services.video_service import VideoService
@@ -111,7 +113,8 @@ def create_app(config: Optional[Config] = None) -> Flask:
     storage_db.init_db(cfg.database_path)
     app.extensions["video_service"] = VideoService(cfg)
     app.extensions["export_service"] = ExportService(cfg)
-    app.extensions["auth_service"] = AuthService(cfg.database_path)
+    app.extensions["auth_service"] = AuthService(cfg)
+    app.extensions["guest_session_service"] = GuestSessionService(cfg)
 
     # --- analysis pipeline -------------------------------------------------
     # The adapter is resolved through ``app.extensions`` on every job, so a
@@ -144,6 +147,16 @@ def create_app(config: Optional[Config] = None) -> Flask:
             g.request_id = new_request_id()
         g.setdefault(REQUEST_STARTED_AT, time.monotonic())
 
+        if (
+            request.method in {"POST", "PUT", "PATCH", "DELETE"}
+            and request.headers.get("Sec-Fetch-Site") == "cross-site"
+        ):
+            raise ApiError(
+                "CROSS_SITE_REQUEST_BLOCKED",
+                "不接受跨站状态变更请求",
+                status=403,
+            )
+
     @app.after_request
     def _finalize_response(response: Response) -> Response:
         """Expose the correlation id and write one access log line."""
@@ -155,6 +168,19 @@ def create_app(config: Optional[Config] = None) -> Flask:
         content_type = response.headers.get("Content-Type") or ""
         if response.mimetype == "application/json" and "charset" not in content_type:
             response.headers["Content-Type"] = "application/json; charset=utf-8"
+
+        protected_prefixes = (
+            f"{cfg.api_prefix}/videos",
+            f"{cfg.api_prefix}/jobs",
+            f"{cfg.api_prefix}/history",
+            f"{cfg.api_prefix}/auth",
+        )
+        if request.path.startswith(protected_prefixes):
+            response.headers["Cache-Control"] = "private, no-store"
+            vary = response.headers.get("Vary")
+            response.headers["Vary"] = (
+                f"{vary}, Cookie" if vary and "Cookie" not in vary else "Cookie"
+            )
 
         started = getattr(g, REQUEST_STARTED_AT, None)
         duration_ms = (time.monotonic() - started) * 1000 if started else 0.0

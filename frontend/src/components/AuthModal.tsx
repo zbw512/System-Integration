@@ -46,15 +46,22 @@ export function AuthModal({ open, onClose }: AuthModalProps) {
     try {
       if (mode === "login") {
         await login(values.username?.trim() ?? "", values.password ?? "");
-        message.success("已登录");
       } else {
         await register(
           values.username?.trim() ?? "",
           values.password ?? "",
           values.display_name
         );
-        message.success("账户已创建");
       }
+      const claimedJobs =
+        useAuthStore.getState().lastClaimedGuestJobs;
+      const completedText =
+        mode === "login" ? "已登录" : "账户已创建";
+      message.success(
+        claimedJobs > 0
+          ? `${completedText}，并保存了 ${claimedJobs} 条匿名分析记录`
+          : completedText
+      );
       onClose();
     } catch (submitError) {
       setError(getErrorMessage(submitError));

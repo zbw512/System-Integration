@@ -260,18 +260,20 @@ export function VideoUpload() {
                 : "尚未选择视频"}
           </Typography.Text>
 
-          <Button
-            type="primary"
-            loading={localUploading}
-            disabled={!file || isBusy}
-            onClick={handleUpload}
-          >
-            {localUploading
-              ? "上传中"
-              : uploadedVideo
-                ? "重新上传"
-                : "上传视频"}
-          </Button>
+          {(file || !uploadedVideo) && (
+            <Button
+              type="primary"
+              loading={localUploading}
+              disabled={!file || isBusy}
+              onClick={handleUpload}
+            >
+              {localUploading
+                ? "上传中"
+                : uploadedVideo
+                  ? "重新上传"
+                  : "上传视频"}
+            </Button>
+          )}
         </div>
       </Space>
     </Card>

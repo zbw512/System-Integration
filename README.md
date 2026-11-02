@@ -1,5 +1,10 @@
 # 学生学习状态分析系统
-本项目包含一个 React 视频分析前端和一个 Flask 分析后端，当前围绕本地短视频完成：
+
+本项目正式定位为：**基于视频 VLM 与 EEG 脑电的多模态学生学习状态分析系统**。长期目标是融合课堂视频中的学习场景信息与 EEG 专注度信息，研究不同学习场景下专注度的变化规律。
+
+当前交付是可运行的初版产品：视频 VLM 学习场景识别、匿名分析、账户认证、个人历史和权限隔离已经可用；EEG 专注度解码、跨模态时间对齐与融合模型仍属于后续独立研发，不应把当前视频场景标签解释为学习专注度结论。
+
+项目包含一个 React 视频分析前端和一个 Flask 分析后端，当前围绕本地短视频完成：
 
 ```text
 视频上传 -> 创建异步任务 -> 2 秒 HTTP 轮询 -> 场景结果 -> 视频时间轴联动
@@ -26,8 +31,12 @@
 - JSON/CSV 结果导出；
 - 前端上传进度、轮询、视频播放器和场景时间轴；
 - 本地账户注册、登录、退出和 HttpOnly Cookie 会话；
+- 匿名浏览器独立访问凭证，未登录状态仍可完成上传、分析、播放和时间轴操作；
+- 登录或注册时自动认领当前浏览器匿名会话中的 Video 和 Job；
+- Video、Job、分析结果和视频文件按当前用户或匿名会话执行后端归属校验；
 - 登录用户的个人分析历史，历史以持久化 Job 为单位；
 - Apple 风格单页工作台、右上角账户入口和历史抽屉；
+- 桌面、笔记本、平板和手机窄屏的响应式布局；
 - 前端独立 Mock 模式；
 - 可选的真实 MiniCPM-V 4.6 离线逐帧分类。
 
@@ -40,7 +49,7 @@
 - 任务取消；
 - CPU 推理；
 - 视频转码；
-- 细粒度角色权限、团队共享和完整的多用户数据隔离。
+- 细粒度角色权限、团队共享和跨用户主动分享。
 
 ## 技术栈
 
@@ -227,6 +236,14 @@ $env:BACKEND_VLM_DEVICE = "cuda"
 | `BACKEND_LOG_LEVEL` | `INFO` | 日志等级 |
 | `BACKEND_LOG_FILE` | 空 | 可选日志文件 |
 | `BACKEND_MAX_UPLOAD_MB` | `512` | 上传/导入上限 |
+| `BACKEND_GUEST_SESSION_TTL_HOURS` | `24` | 匿名浏览器访问凭证有效期 |
+| `BACKEND_SESSION_TTL_DAYS` | `14` | 登录会话固定有效期 |
+| `BACKEND_LOGIN_MAX_FAILURES` | `5` | 登录限流窗口内最大失败次数 |
+| `BACKEND_LOGIN_WINDOW_SECONDS` | `900` | 登录失败统计窗口 |
+| `BACKEND_LOGIN_BLOCK_SECONDS` | `900` | 触发限流后的封禁时长 |
+| `BACKEND_REGISTRATION_MAX_ATTEMPTS` | `10` | 注册接口每小时最大尝试次数 |
+| `BACKEND_REGISTRATION_WINDOW_SECONDS` | `3600` | 注册尝试统计窗口 |
+| `BACKEND_REGISTRATION_TOKEN` | 空 | 可选注册口令请求头 `X-Registration-Token` |
 | `BACKEND_DATA_DIR` | `backend/var` | SQLite 和视频数据目录 |
 | `BACKEND_DB_PATH` | `<data_dir>/app.db` | 可选显式数据库路径 |
 | `BACKEND_VIDEO_SUBDIR` | `videos` | 视频子目录 |
@@ -266,7 +283,7 @@ $env:BACKEND_VLM_DEVICE = "cuda"
 | GET | `/health` | 健康检查 |
 | GET | `/api/v1/info` | 服务能力和接口信息 |
 | POST | `/api/v1/videos/upload` | multipart 上传，字段 `file` |
-| POST | `/api/v1/videos/register` | 登记允许目录内视频 |
+| POST | `/api/v1/videos/register` | 登记允许目录内视频，需要登录 |
 | GET | `/api/v1/videos` | 视频列表 |
 | GET | `/api/v1/videos/{video_id}` | 视频详情 |
 | GET | `/api/v1/videos/{video_id}/file` | 视频文件，支持 Range |
@@ -277,6 +294,7 @@ $env:BACKEND_VLM_DEVICE = "cuda"
 | POST | `/api/v1/auth/login` | 登录并更新会话 Cookie |
 | POST | `/api/v1/auth/logout` | 退出并撤销当前会话 |
 | GET | `/api/v1/auth/me` | 查询当前登录状态 |
+| POST | `/api/v1/auth/claim-anonymous` | 已登录用户重新尝试认领当前浏览器匿名任务 |
 | GET | `/api/v1/history` | 查询当前用户的个人分析历史，需要登录 |
 | GET | `/api/v1/videos/{video_id}/results?format=json\|csv` | 查询或导出结果 |
 
@@ -416,12 +434,24 @@ confidence, evidence, is_uncertain
 
 - `users` 表：本地账户、显示名称和 PBKDF2 密码摘要；
 - `sessions` 表：会话令牌摘要、所属用户和过期时间；
-- `videos` 表：视频元数据、当前分析来源、Segment JSON、模型和评价资格；
-- `jobs` 表：任务状态、阶段、进度、结果/错误 JSON、模型信息和可空的用户归属。
+- `guest_sessions` 表：匿名浏览器令牌摘要、有效期、撤销状态和认领账户；
+- `videos` 表：视频元数据、当前分析来源、可空的用户/匿名归属、Segment JSON、模型和评价资格；
+- `jobs` 表：任务状态、阶段、进度、结果/错误 JSON、模型信息和可空的用户/匿名归属；
+- `schema_migrations` 表：已执行的数据结构迁移版本。
 
-`videos.user_id` 与 `jobs.user_id` 只用于内部归属和历史查询，不加入现有 Video/Job 公共响应字段。升级前已有的匿名记录保持 `user_id=null`，不会出现在任何个人历史中。
+归属字段不加入现有 Video/Job 公共响应。登录用户请求按 `user_id` 查询，匿名浏览器按 `guest_id` 查询；无权访问和不存在统一返回 404。Job 只有在自身与父 Video 归属一致时才可读取。登录或注册请求携带有效匿名 Cookie 时，会在同一事务中把该匿名会话的资源和 Job 转移到当前用户，并撤销匿名会话。升级前已有的记录保持 `user_id=null, guest_id=null`，数据不删除、不自动分配，也不会通过普通资源接口暴露。
 
 数据库使用 WAL。视频文件在 `backend/var/videos/`，API 不暴露存储绝对路径。
+
+## 账户、历史与访问控制
+
+- 未登录用户可直接上传和分析视频，浏览器通过独立 HttpOnly 匿名 Cookie 访问自己的 Video、Job、结果和文件。
+- 视频、Job 和结果接口全部执行后端归属校验；无权访问与不存在统一返回 `404`。
+- 右上角“登录”打开登录/注册弹窗，未登录用户无需登录即可使用核心分析功能。
+- 登录或注册时，后端验证当前匿名 Cookie，并把该匿名会话的资源一次性认领到当前账户。
+- 登录后可从右上角账户菜单打开个人历史；历史项来自持久化 Job，可重新载入视频、场景时间轴和结果。
+- 退出登录会撤销当前服务端会话并清空前端工作台；其他设备上的独立会话不受影响。
+- 旧 `user_id=NULL, guest_id=NULL` 记录保留，但没有匿名凭证，不能自动认领。
 
 ## Mock 与真实模型
 
@@ -479,10 +509,10 @@ cd <project-root>\backend
 .\.venv\Scripts\python.exe -m pytest -v
 ```
 
-2026-10-28 在新建隔离环境中的结果：
+2026-11-01 最终回归结果：
 
 ```text
-277 passed, 1 skipped
+312 passed, 1 skipped
 ```
 
 跳过项是 opt-in 的真实模型测试。本轮未加载真实模型。
@@ -497,9 +527,14 @@ npm run build
 
 当前 TypeScript 检查和生产构建通过。
 
-2026-10-28 端到端验收还确认：
+最终前后端联调确认：
 
 - 可播放 H.264 视频上传、分析、播放和时间轴跳转；
+- 匿名用户可完整完成上传、分析、播放和时间轴操作；
+- 登录用户可完成分析、查看历史、重新载入历史结果并刷新会话；
+- 登录/注册可认领当前匿名会话，其他匿名会话无法认领；
+- 历史记录在退出、重新登录和后端重启后仍然存在；
+- 桌面、1024px 笔记本、768px 平板和 390px 手机视口无横向溢出；
 - 文件 Range 返回 206；
 - JSON/CSV 导出一致，CSV 带 UTF-8 BOM；
 - 重复 Job 返回 409；
@@ -540,8 +575,13 @@ Vite preview 已代理 `/api` 和 `/health`。正式部署建议将前端静态�
 10. `npm audit` 当前报告 Vite/esbuild 开发依赖存在 1 个中危和 1 个高危项；自动修复要求 Vite 大版本升级，尚未在本轮执行。开发服务器仅绑定 `127.0.0.1`。
 11. 异步 Job 错误展示 `message`，页面同时显示 `job_id`，但当前 Job error 不携带创建请求的 `request_id`。
 12. Ant Design 静态 `message` API 会在浏览器控制台产生一条上下文警告，不影响当前操作。
-13. 本地账户使用 PBKDF2-SHA256 密码摘要和 HttpOnly、SameSite=Lax 会话 Cookie；正式部署仍需 HTTPS、登录限流、会话管理和审计。为保持未登录用户的现有 VLM 使用方式，视频、Job 详情和结果导出接口仍是全局可访问的，不能把它们视为完整的隐私隔离边界。
+13. 本地账户使用 PBKDF2-SHA256 密码摘要和 HttpOnly、SameSite=Lax 会话 Cookie；匿名浏览器使用独立 HttpOnly Cookie。登录和注册已有限流，正式部署仍需 HTTPS、可信代理配置、会话管理和审计。
 14. 个人历史按 Job 保存，可查看每次已完成分析的真实结果；Video 当前结果在重新分析时仍会被覆盖。
+15. 匿名资源默认 24 小时可访问，可通过 `BACKEND_GUEST_SESSION_TTL_HOURS` 调整；清除匿名 Cookie 后无法通过 ID 找回访问权。
+16. 旧 `user_id=null, guest_id=null` 记录默认不可通过普通 HTTP API 访问。如需归属，必须后续通过显式本地维护流程完成，不能自动认领。
+17. 登录失败限流以当前请求客户端地址和账户标识分别计数。部署在反向代理后时，应确保可信代理正确传递客户端地址，否则所有请求可能被当作同一来源。
+18. `BACKEND_REGISTRATION_TOKEN` 留空时仍是本地开放注册；若系统监听非受信网络，应设置注册口令或在外层网关限制注册接口。
+19. 真实 MiniCPM-V 适配器代码和验收记录存在，但最终自动化回归默认使用 Mock；切换真实模型前仍需按目标主机重新确认 CUDA、依赖和模型权重。
 
 ## 常见问题
 
@@ -589,4 +629,12 @@ Vite preview 已代理 `/api` 和 `/health`。正式部署建议将前端静态�
 ## 后续方向
 
 EEG 接入、评估指标、跨模态融合、实时流和任务取消仍属于后续工作。它们当前没有可用接口，不能按现有 README 推断为已经实现。
+
+### EEG 接入前置准备
+
+1. 明确 EEG 设备型号、采样率、通道定义、时间源和数据导出格式。
+2. 定义匿名化后的 EEG 会话模型、时间戳单位、时钟同步误差和缺失数据处理方式。
+3. 增加 EEG Adapter 接口与本地测试数据，不在前端伪造波形或专注度评分。
+4. 建立视频 Segment 与 EEG 时间窗的对齐规则，再设计跨模态融合输入。
+5. 确定人工标注、评估指标、数据访问授权和脱敏保留策略。
 

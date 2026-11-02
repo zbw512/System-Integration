@@ -43,11 +43,14 @@ class Video:
     #: Owner used for authenticated history. Never exposed in the public Video
     #: payload, preserving the existing frontend/API contract.
     user_id: str | None = None
+    guest_id: str | None = None
 
     def __post_init__(self) -> None:
         self.source = VideoSource(self.source)
         self.status = VideoStatus(self.status)
         self.prediction_source = PredictionSource(self.prediction_source)
+        if self.user_id is not None and self.guest_id is not None:
+            raise ValueError("Video 不能同时属于登录用户和匿名会话")
         # Standard 2.2: eligibility is derived by the backend from the
         # prediction source, never accepted from a client.
         self.evaluation_eligible = is_evaluation_eligible(self.prediction_source)

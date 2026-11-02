@@ -115,6 +115,7 @@ def info():
             "job_execution": True,
             "result_export": True,
             "local_accounts": True,
+            "guest_claim": True,
             "personal_history": True,
             "evaluation": False,
             "eeg_ingest": False,
@@ -223,6 +224,12 @@ def info():
                 "path": f"{cfg.api_prefix}/history",
                 "status": "implemented",
                 "description": "查询当前用户的分析历史",
+            },
+            {
+                "method": "POST",
+                "path": f"{cfg.api_prefix}/auth/claim-anonymous",
+                "status": "implemented",
+                "description": "认领当前匿名会话中的分析任务",
             },
         ],
         "limits": {

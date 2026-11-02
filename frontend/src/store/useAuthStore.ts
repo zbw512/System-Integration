@@ -12,6 +12,7 @@ interface AuthStore {
   initialized: boolean;
   busy: boolean;
   error: string | null;
+  lastClaimedGuestJobs: number;
   initialize: () => Promise<void>;
   login: (username: string, password: string) => Promise<void>;
   register: (
@@ -29,6 +30,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   initialized: false,
   busy: false,
   error: null,
+  lastClaimedGuestJobs: 0,
 
   initialize: async () => {
     if (get().initialized || get().busy) {
@@ -42,10 +44,16 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
         initialized: true,
         busy: false,
         error: null,
+        lastClaimedGuestJobs: 0,
       });
     } catch {
       // An unavailable account service must not block anonymous VLM use.
-      set({ user: null, initialized: true, busy: false });
+      set({
+        user: null,
+        initialized: true,
+        busy: false,
+        lastClaimedGuestJobs: 0,
+      });
     }
   },
 
@@ -57,6 +65,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
         user: response.user,
         busy: false,
         initialized: true,
+        lastClaimedGuestJobs: response.guest_claim?.jobs ?? 0,
       });
     } catch (error) {
       set({ busy: false });
@@ -76,6 +85,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
         user: response.user,
         busy: false,
         initialized: true,
+        lastClaimedGuestJobs: response.guest_claim?.jobs ?? 0,
       });
     } catch (error) {
       set({ busy: false });
@@ -87,7 +97,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     set({ busy: true, error: null });
     try {
       await logoutAccount();
-      set({ user: null, busy: false });
+      set({ user: null, busy: false, lastClaimedGuestJobs: 0 });
     } catch (error) {
       set({ busy: false });
       throw error;
@@ -99,6 +109,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       user: null,
       initialized: true,
       busy: false,
+      lastClaimedGuestJobs: 0,
     }),
 
   clearError: () => set({ error: null }),

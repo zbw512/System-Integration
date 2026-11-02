@@ -16,7 +16,17 @@ import sqlite3
 from contextlib import contextmanager
 from typing import Iterator
 
+from migrations.resource_ownership import apply as apply_resource_ownership
+from migrations.auth_hardening import apply as apply_auth_hardening
+from migrations.guest_claim import apply as apply_guest_claim
+
 SCHEMA_STATEMENTS = (
+    """
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+        version    TEXT PRIMARY KEY,
+        applied_at TEXT NOT NULL
+    )
+    """,
     """
     CREATE TABLE IF NOT EXISTS users (
         user_id       TEXT PRIMARY KEY,
@@ -53,7 +63,8 @@ SCHEMA_STATEMENTS = (
         segments_json       TEXT NOT NULL DEFAULT '[]',
         metadata_json       TEXT NOT NULL DEFAULT '{}',
         storage_path        TEXT,
-        user_id             TEXT
+        user_id             TEXT,
+        guest_id            TEXT
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_videos_created_at ON videos(created_at DESC, video_id)",
@@ -76,6 +87,7 @@ SCHEMA_STATEMENTS = (
         model_json    TEXT,
         metadata_json TEXT NOT NULL DEFAULT '{}',
         user_id       TEXT,
+        guest_id      TEXT,
         FOREIGN KEY (video_id) REFERENCES videos(video_id) ON DELETE CASCADE
     )
     """,
@@ -129,6 +141,10 @@ def init_db(db_path: str) -> None:
             "CREATE INDEX IF NOT EXISTS idx_jobs_user_created "
             "ON jobs(user_id, created_at DESC, job_id)"
         )
+
+        apply_resource_ownership(connection)
+        apply_auth_hardening(connection)
+        apply_guest_claim(connection)
 
 
 def ping(db_path: str) -> bool:

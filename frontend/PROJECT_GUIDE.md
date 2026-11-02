@@ -47,7 +47,7 @@
 - `mock`：默认模式，不加载模型，用于验证 API、任务状态机和前端展示；
 - `minicpm`：真实 MiniCPM-V 4.6 逐帧分类实现，需要 CUDA、PyTorch、Transformers 和本地模型权重。
 
-当前已经实现并验证了 Mock 全链路、可播放视频处理、任务轮询、Range 文件访问、结果导出和前端时间轴。真实 MiniCPM-V 推理代码存在，但当前环境没有完成运行验收。
+当前已经实现并验证了 Mock 全链路、可播放视频处理、任务轮询、Range 文件访问、结果导出、前端时间轴、认证、权限隔离和历史认领。真实 MiniCPM-V 推理代码及适配器测试存在，最终自动化回归仍默认使用 Mock，真实 GPU 测试需按部署机器重新验收。
 
 ## 2. 技术栈
 
@@ -100,6 +100,7 @@ System-Intergration/
 │   ├── app.py
 │   ├── config.py
 │   ├── logging_setup.py
+│   ├── migrations/
 │   ├── adapters/
 │   │   ├── __init__.py
 │   │   └── vlm/
@@ -111,7 +112,9 @@ System-Intergration/
 │   │       └── scene.py
 │   ├── api/
 │   │   ├── __init__.py
+│   │   ├── auth.py
 │   │   ├── errors.py
+│   │   ├── history.py
 │   │   ├── jobs.py
 │   │   ├── params.py
 │   │   ├── system.py
@@ -120,17 +123,21 @@ System-Intergration/
 │   │   ├── __init__.py
 │   │   └── timeutil.py
 │   ├── schemas/
+│   │   ├── access.py
 │   │   ├── __init__.py
 │   │   ├── enums.py
 │   │   ├── job.py
 │   │   ├── segment.py
+│   │   ├── user.py
 │   │   └── video.py
 │   ├── services/
+│   │   ├── auth_service.py
 │   │   ├── __init__.py
 │   │   ├── errors.py
 │   │   ├── export_service.py
 │   │   ├── job_service.py
 │   │   ├── media_probe.py
+│   │   ├── guest_session_service.py
 │   │   ├── task_runner.py
 │   │   └── video_service.py
 │   ├── storage/
@@ -144,8 +151,13 @@ System-Intergration/
 │       ├── media_fixtures.py
 │       ├── video_fixtures.py
 │       ├── test_config.py
+│       ├── test_access_isolation.py
+│       ├── test_auth_history.py
+│       ├── test_auth_security.py
 │       ├── test_frames.py
 │       ├── test_job_runner.py
+│       ├── test_guest_claim.py
+│       ├── test_legacy_ownership.py
 │       ├── test_jobs_api.py
 │       ├── test_media_probe.py
 │       ├── test_minicpm_adapter.py
@@ -1010,7 +1022,7 @@ npm run build
 
 - Python 基础依赖安装成功；
 - `pip check`：`No broken requirements found`；
-- 后端：`277 passed, 1 skipped`；
+- 后端：`312 passed, 1 skipped`；
 - 前端安装：成功；
 - TypeScript 强制重建、typecheck：通过；
 - Vite build：通过；
@@ -1027,6 +1039,8 @@ npm run build
 - 真实模型缺失时前端显示可读错误；
 - `confidence:null` 显示“未提供”；
 - 后端重启后的视频和 Job 仍可查询。
+- 匿名任务登录后认领成功且不可重复认领；
+- 桌面、1024px 笔记本、768px 平板和 390px 手机视口无横向溢出；
 
 ### 13.3 未执行或未通过
 
@@ -1039,7 +1053,7 @@ npm run build
 
 ## 14. 当前限制
 
-1. 真实 MiniCPM-V 代码存在，但当前环境未证明可运行。
+1. 真实 MiniCPM-V 代码和适配器逻辑已覆盖测试，但最终全量自动化测试未加载真实 GPU 模型。
 2. 仅支持 CUDA 推理，没有 CPU 回退。
 3. 视频只接受 MP4/M4V/MOV 且需 ISO-BMFF 头；没有转码。
 4. 默认最长只采样 60 秒、8 帧，不等同于完整长视频时序分析。
@@ -1049,14 +1063,14 @@ npm run build
 8. 服务重启会将进行中的任务标记失败，不续跑。
 9. 没有任务取消接口。
 10. 重新分析会清空旧结果。
-11. 已提供本地账户和按用户 Job 历史，但没有细粒度角色权限、团队共享和完整 API 数据隔离；为保留匿名 VLM 使用，视频与 Job 详情接口仍全局可访问。
+11. 已提供登录用户和匿名浏览器的 Video、Job、结果与文件访问隔离，并支持登录/注册时认领当前匿名会话；仍没有细粒度角色权限或团队共享。
 12. 没有 EEG、融合、评价指标、实时流或 WebSocket。
 13. 没有前端自动化测试。
 14. 异步 Job 错误没有 request_id，只能通过页面显示和日志中的 job_id 关联。
 15. `/health` 当前固定将 `checks.vlm_adapter` 报为 `not_implemented`，与 `/api/v1/info` 的适配器信息不完全一致，不能只看这一项判断模型是否配置成功。
 16. Vite 5/esbuild 审计告警需要后续大版本升级处理。
 17. 当前集成交付改动尚未提交到 Git。
-18. 本地账户使用 PBKDF2-SHA256、HttpOnly Cookie 和 SQLite 会话；正式部署还需 HTTPS、登录限流和审计。
+18. 本地账户使用 PBKDF2-SHA256、HttpOnly Cookie、SQLite 会话及登录/注册限流；正式部署还需 HTTPS、可信代理配置和审计。
 
 ## 15. 旧文档与最终代码的差异
 
