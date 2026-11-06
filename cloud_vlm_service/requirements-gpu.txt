@@ -1,0 +1,14 @@
+-r requirements-service.txt
+
+# The base model's config.json records transformers 4.51.0. The remote
+# MiniCPMV implementation uses its pre-5.x tied-weights API, so installing 5.x
+# fails during AutoModel.from_pretrained. Torch/Torchvision stay image-managed.
+accelerate==1.15.0
+huggingface-hub==0.36.2
+numpy==2.5.4
+peft==0.20.0
+protobuf==7.36.2
+safetensors==0.8.0
+sentencepiece==0.2.2
+tokenizers==0.21.4
+transformers==4.51.0

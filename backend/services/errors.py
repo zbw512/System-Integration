@@ -243,6 +243,50 @@ class VlmLoadFailedError(ServiceError):
     retryable = True
 
 
+class VlmRemoteConfigurationError(ServiceError):
+    """The cloud adapter has no usable URL or Token."""
+
+    code = "VLM_REMOTE_NOT_CONFIGURED"
+    status = 503
+    default_message = "AutoDL 视觉模型服务未正确配置"
+
+
+class VlmRemoteUnavailableError(ServiceError):
+    """The SSH tunnel or cloud inference service cannot be reached."""
+
+    code = "VLM_REMOTE_UNAVAILABLE"
+    status = 503
+    default_message = "AutoDL 视觉模型服务不可用"
+    retryable = True
+
+
+class VlmRemoteAuthFailedError(ServiceError):
+    """The cloud service rejected the backend Token."""
+
+    code = "VLM_REMOTE_AUTH_FAILED"
+    status = 502
+    default_message = "AutoDL 视觉模型服务鉴权失败"
+    retryable = False
+
+
+class VlmRemoteRejectedError(ServiceError):
+    """The cloud service rejected the inference request."""
+
+    code = "VLM_REMOTE_REQUEST_REJECTED"
+    status = 422
+    default_message = "AutoDL 视觉模型服务拒绝了推理请求"
+    retryable = False
+
+
+class VlmRemoteInferenceError(ServiceError):
+    """The cloud service returned an inference/upstream failure."""
+
+    code = "VLM_REMOTE_INFERENCE_FAILED"
+    status = 502
+    default_message = "AutoDL 视觉模型推理失败"
+    retryable = True
+
+
 class VideoDecodeError(ServiceError):
     """The video container could not be opened or decoded."""
 

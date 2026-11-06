@@ -89,3 +89,47 @@ def test_non_positive_session_security_values_are_rejected(monkeypatch):
 
     with pytest.raises(ValueError):
         Config.from_env()
+
+
+def test_remote_vlm_environment_defaults_and_overrides(monkeypatch):
+    _clear_backend_env(monkeypatch)
+    monkeypatch.setenv("BACKEND_VLM_ADAPTER", "minicpm_remote")
+    monkeypatch.setenv("BACKEND_VLM_REMOTE_URL", "http://127.0.0.1:19001")
+    monkeypatch.setenv(
+        "BACKEND_VLM_REMOTE_TOKEN",
+        "backend-remote-token-0123456789abcdef",
+    )
+    monkeypatch.setenv("BACKEND_VLM_REMOTE_TIMEOUT_S", "45.5")
+    monkeypatch.setenv("BACKEND_VLM_REMOTE_RETRIES", "1")
+    monkeypatch.setenv("BACKEND_VLM_WINDOW_SECONDS", "3")
+    monkeypatch.setenv("BACKEND_VLM_WINDOW_STRIDE_SECONDS", "3")
+    monkeypatch.setenv("BACKEND_VLM_MAX_FRAMES", "8")
+
+    cfg = Config.from_env()
+
+    assert cfg.vlm_adapter == "minicpm_remote"
+    assert cfg.vlm_remote_url == "http://127.0.0.1:19001"
+    assert cfg.vlm_remote_timeout_s == 45.5
+    assert cfg.vlm_remote_retries == 1
+    assert cfg.vlm_window_seconds == 3.0
+    assert cfg.vlm_window_stride_seconds == 3.0
+    assert cfg.vlm_max_frames == 8
+
+
+def test_remote_mode_rejects_more_than_eight_frames(monkeypatch):
+    _clear_backend_env(monkeypatch)
+    monkeypatch.setenv("BACKEND_VLM_ADAPTER", "minicpm_remote")
+    monkeypatch.setenv("BACKEND_VLM_MAX_FRAMES", "9")
+
+    with pytest.raises(ValueError):
+        Config.from_env()
+
+
+def test_overlapping_remote_window_stride_is_rejected(monkeypatch):
+    _clear_backend_env(monkeypatch)
+    monkeypatch.setenv("BACKEND_VLM_ADAPTER", "minicpm_remote")
+    monkeypatch.setenv("BACKEND_VLM_WINDOW_SECONDS", "3")
+    monkeypatch.setenv("BACKEND_VLM_WINDOW_STRIDE_SECONDS", "1.5")
+
+    with pytest.raises(ValueError):
+        Config.from_env()

@@ -45,7 +45,9 @@
 后端支持两种实现：
 
 - `mock`：默认模式，不加载模型，用于验证 API、任务状态机和前端展示；
-- `minicpm`：真实 MiniCPM-V 4.6 逐帧分类实现，需要 CUDA、PyTorch、Transformers 和本地模型权重。
+- `minicpm_remote`：当前正式模式，通过 AutoDL 调用 MiniCPM-V 4.5 + scene4/checkpoint-600；Flask 本地负责窗口抽帧和 Segment 保存。
+- `minicpm_v45_lora`：`minicpm_remote` 的等价别名。
+- `minicpm`：历史本地 MiniCPM-V 4.6 逐帧分类实现，仅保留兼容。
 
 当前已经实现并验证了 Mock 全链路、可播放视频处理、任务轮询、Range 文件访问、结果导出、前端时间轴、认证、权限隔离和历史认领。真实 MiniCPM-V 推理代码及适配器测试存在，最终自动化回归仍默认使用 Mock，真实 GPU 测试需按部署机器重新验收。
 
@@ -79,7 +81,7 @@
 | numpy | 1.26.4 |
 | PyAV | 19.0.2 |
 | SQLite | Python 标准库 `sqlite3` |
-| 真实 VLM | MiniCPM-V 4.6，依赖外部 torch/transformers/CUDA 环境 |
+| 正式真实 VLM | MiniCPM-V 4.5 + LoRA，通过 AutoDL HTTP + SSH 隧道 |
 
 真实 VLM 的 PyTorch、torchvision、Transformers 版本没有放入通用依赖文件，因为这些包的安装源和版本必须匹配实际 CUDA 主机。
 
@@ -811,15 +813,18 @@ evaluation_eligible=false
 
 Mock 不能用于模型性能、准确率或学习状态结论。
 
-### 9.5 真实 MiniCPM-V
+### 9.5 AutoDL 真实 MiniCPM-V 4.5
 
 ```powershell
-$env:BACKEND_VLM_ADAPTER = "minicpm"
-$env:BACKEND_VLM_MODEL_PATH = "<模型目录绝对路径>"
-$env:BACKEND_VLM_DEVICE = "cuda"
+$env:BACKEND_VLM_ADAPTER = "minicpm_remote"
+$env:BACKEND_VLM_REMOTE_URL = "http://127.0.0.1:18080"
+$env:BACKEND_VLM_REMOTE_TOKEN = "<与 AutoDL 一致的 Token>"
 ```
 
-模型在首次任务时加载，之后在当前进程复用。真实模式失败不会回退到 Mock。
+模型在 AutoDL 服务启动时加载，之后在该进程复用。Flask 本地负责完整视频解码、
+3 秒窗口和每窗口最多 8 帧；真实模式失败不会回退到 Mock。
+
+历史本地 4.6 模式仍可使用 `BACKEND_VLM_ADAPTER=minicpm`，但不是当前正式模型。
 
 ## 10. 配置说明
 
@@ -1022,7 +1027,8 @@ npm run build
 
 - Python 基础依赖安装成功；
 - `pip check`：`No broken requirements found`；
-- 后端：`312 passed, 1 skipped`；
+- 后端：`356 passed, 2 skipped`；
+- 前端：Vitest `3 passed`；
 - 前端安装：成功；
 - TypeScript 强制重建、typecheck：通过；
 - Vite build：通过；
@@ -1046,18 +1052,19 @@ npm run build
 
 - 真实 MiniCPM-V 模型测试被跳过；
 - `test_real_vlm_optional.py` 没有使用 `BACKEND_REAL_VLM_TEST=1` 执行；
-- 前端 `npm test` 不存在，执行会返回 `Missing script: "test"`；
+- 前端 `npm test` 已可用，当前包含上传进度、Segment 归一化和结果提取契约测试；
 - 没有完成真实模型准确率、显存或生产性能验收；
 - `npm audit` 仍报告 Vite/esbuild 的 1 个中危和 1 个高危项；
 - Ant Design 静态 `message` 调用仍有控制台警告。
 
 ## 14. 当前限制
 
-1. 真实 MiniCPM-V 代码和适配器逻辑已覆盖测试，但最终全量自动化测试未加载真实 GPU 模型。
+1. AutoDL MiniCPM-V 4.5 代码和 Mock 全链路已覆盖测试，但最终全量自动化测试没有加载真实 GPU 模型。
 2. 仅支持 CUDA 推理，没有 CPU 回退。
 3. 视频只接受 MP4/M4V/MOV 且需 ISO-BMFF 头；没有转码。
 4. 默认最长只采样 60 秒、8 帧，不等同于完整长视频时序分析。
-5. 真实模型是逐帧分类，时间边界来自采样间隔，不是精确场景切换检测。
+5. 当前正式 4.5 模型按 3 秒窗口、每窗口 8 帧联合分类；窗口策略仍是暂定配置，
+   不等于训练加载器逐字节复现。
 6. 真实模型 `confidence=null`，不是 0%；前端显示“未提供”。
 7. 后端为单进程单线程队列，不适合直接开启多个 Web Worker/WSGI worker。
 8. 服务重启会将进行中的任务标记失败，不续跑。
@@ -1065,9 +1072,9 @@ npm run build
 10. 重新分析会清空旧结果。
 11. 已提供登录用户和匿名浏览器的 Video、Job、结果与文件访问隔离，并支持登录/注册时认领当前匿名会话；仍没有细粒度角色权限或团队共享。
 12. 没有 EEG、融合、评价指标、实时流或 WebSocket。
-13. 没有前端自动化测试。
+13. 已增加前端 API 契约测试；仍没有浏览器级 Playwright 自动化测试。
 14. 异步 Job 错误没有 request_id，只能通过页面显示和日志中的 job_id 关联。
-15. `/health` 当前固定将 `checks.vlm_adapter` 报为 `not_implemented`，与 `/api/v1/info` 的适配器信息不完全一致，不能只看这一项判断模型是否配置成功。
+15. `/health` 会报告 Mock、远程配置状态或不可用状态；模型是否实际加载仍需查询 AutoDL `/health`。
 16. Vite 5/esbuild 审计告警需要后续大版本升级处理。
 17. 当前集成交付改动尚未提交到 Git。
 18. 本地账户使用 PBKDF2-SHA256、HttpOnly Cookie、SQLite 会话及登录/注册限流；正式部署还需 HTTPS、可信代理配置和审计。
@@ -1107,7 +1114,8 @@ npm run build
 
 大部分接口说明与代码一致，但仍保留 P0 阶段的开发历史称呼。P0 字样是开发批次名称，不代表当前只有 P0 壳功能。
 
-### 15.5 仍存在的文档/实现差异
+### 15.5 当前真实模型说明
 
-`/health` 的 `vlm_adapter` 状态仍是旧的 `not_implemented`；最终应以后端实际配置和 `/api/v1/info` 的适配器信息为准，直到该 health 实现被修正。
+当前正式真实模型是 AutoDL 上的 MiniCPM-V 4.5 + scene4/checkpoint-600。
+本地 MiniCPM-V 4.6 代码只保留历史兼容，不是当前交付模型。
 

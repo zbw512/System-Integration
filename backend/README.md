@@ -10,11 +10,14 @@
 > 已完成：应用骨架、健康检查、服务信息、统一错误响应、配置、日志、SQLite 持久化、
 > 视频上传/登记/列表/详情/受控文件访问、分析任务创建（202）/ 任务查询 / Job 状态机 /
 > 单线程后台执行、结果查询与 JSON/CSV 导出、
+> AutoDL MiniCPM-V 4.5 + scene4/checkpoint-600 云端推理适配器、
 > 真实 MiniCPM-V 4.6 适配器（按需加载、逐帧分类、显式边界）、
 > 本地账户与会话、匿名访问隔离、个人历史、匿名任务认领和认证安全控制。
 >
-> **未完成**：SAV 批量处理与评价指标（仍缺人工标注）、EEG、跨模态融合、实时流。
-> 默认 `BACKEND_VLM_ADAPTER=mock`；只有切到 `minicpm` 才会加载本地权重。
+> **未完成**：真实 GPU 下的 850 条验证集指标、评估 UI、EEG、跨模态融合和实时流；
+> 离线验证集重建和评估脚本已准备。
+> 默认 `BACKEND_VLM_ADAPTER=mock`；正式 AutoDL 模式使用
+> `BACKEND_VLM_ADAPTER=minicpm_remote`，历史模式 `minicpm` 才会加载本地 4.6 权重。
 > Mock 结果始终标记 `prediction_source=mock`，不会被当作真实模型预测。
 
 
@@ -417,17 +420,36 @@ vid_5bf8f1443db1,export_clip.mp4,2,2.0,3.0,独立学习,0.75,…,false,mock,mock
 
 ---
 
-## 6. 两个适配器：Mock 与真实 MiniCPM-V 4.6
+## 6. 适配器：Mock、AutoDL 4.5 与历史本地 4.6
 
 `adapters/vlm/base.py` 定义接口，`build_vlm_adapter()` 按 `BACKEND_VLM_ADAPTER` 选择实现：
 
 | 模式 | 适配器 | `prediction_source` | 模型加载 | 用途 |
 |---|---|---|---|---|
-| `mock` | `MockVlmAdapter` | `mock` | 不加载 | 验证任务链路（P0-3 起） |
-| `minicpm` | `MiniCPMV46Adapter` | `model` | 首个任务时按需加载并复用 | 真实离线短视频分析 |
+| `mock` | `MockVlmAdapter` | `mock` | 不加载 | 验证任务链路 |
+| `minicpm_remote` | `MiniCPMV45RemoteAdapter` | `model` | AutoDL 服务内部常驻 | 正式 4.5 + scene4/checkpoint-600 |
+| `minicpm_v45_lora` | `MiniCPMV45RemoteAdapter` | `model` | 同上 | 云端正式模式别名 |
+| `minicpm` | `MiniCPMV46Adapter` | `model` | 首个任务时按需加载并复用 | 历史本地 4.6 |
 
 **失败绝不回退**：真实模式任一步出错（模型缺失/加载失败/解码失败/生成失败）都会让 Job
 `failed` 并记录错误码，**不会**返回 mock 标签。
+
+### AutoDL MiniCPM-V 4.5 云端模式
+
+```powershell
+$env:BACKEND_VLM_ADAPTER = "minicpm_remote"
+$env:BACKEND_VLM_REMOTE_URL = "http://127.0.0.1:18080"
+$env:BACKEND_VLM_REMOTE_TOKEN = "<与 AutoDL 一致且至少 32 字符的 Token>"
+$env:BACKEND_VLM_MAX_FRAMES = "8"
+$env:BACKEND_VLM_WINDOW_SECONDS = "3"
+$env:BACKEND_VLM_WINDOW_STRIDE_SECONDS = "3"
+```
+
+云模式顺序解码完整视频一次，按 3 秒窗口、3 秒步长且不重叠地切分，保留短尾部。
+每窗口最多选择 8 帧，使用无损 PNG 调用一次 AutoDL `/predict_window`。一个窗口生成
+一个 Segment，不合并相邻同标签窗口。网络或模型失败直接令 Job 失败，不回退 Mock。
+
+完整操作见 [`docs/autodl-vlm45-backend-integration.md`](../docs/autodl-vlm45-backend-integration.md)。
 
 ### 6.1 Mock 模式的标记
 
@@ -565,13 +587,20 @@ python app.py
 | `BACKEND_VIDEO_SUBDIR` | `videos` | 视频子目录 |
 | `BACKEND_IMPORT_ROOTS` | 空 | 允许 `register` 的目录（`;` 分隔） |
 | **`BACKEND_JOB_WORKER`** | `true` | 是否启动后台任务线程 |
-| **`BACKEND_VLM_ADAPTER`** | `mock` | 适配器：`mock` 或 `minicpm` |
+| **`BACKEND_VLM_ADAPTER`** | `mock` | `mock`、`minicpm_remote`、`minicpm_v45_lora` 或历史 `minicpm` |
 | **`BACKEND_VLM_MODEL_PATH`** | `<project-root>/models/MiniCPM-V-4.6` | 本地模型目录（不复制进 backend） |
 | **`BACKEND_VLM_DEVICE`** | `cuda` | 推理设备；仅实现并验证 `cuda`，无 CPU 回退 |
-| **`BACKEND_VLM_MAX_FRAMES`** | `8` | 单任务最多采样帧数（1–64） |
+| **`BACKEND_VLM_MAX_FRAMES`** | `8` | 单窗口采样帧；4.5 云端模式最多 8 |
 | **`BACKEND_VLM_FRAME_INTERVAL_S`** | `1.0` | 采样间隔（秒，>0） |
 | **`BACKEND_VLM_MAX_DURATION_S`** | `60.0` | 单任务最长处理时长（秒，>0） |
 | **`BACKEND_VLM_MAX_NEW_TOKENS`** | `48` | 每帧生成上限 |
+| **`BACKEND_VLM_REMOTE_URL`** | `http://127.0.0.1:18080` | AutoDL SSH 隧道地址 |
+| **`BACKEND_VLM_REMOTE_TOKEN`** | 空 | 云端 Token，绝不进入前端 |
+| **`BACKEND_VLM_REMOTE_TIMEOUT_S`** | `300` | 单窗口超时 |
+| **`BACKEND_VLM_REMOTE_RETRIES`** | `2` | 有限重试次数 |
+| **`BACKEND_VLM_REMOTE_MAX_RESPONSE_BYTES`** | `1048576` | 最大响应体 |
+| **`BACKEND_VLM_WINDOW_SECONDS`** | `3` | 暂定窗口长度 |
+| **`BACKEND_VLM_WINDOW_STRIDE_SECONDS`** | `3` | 暂定窗口步长 |
 | `BACKEND_TESTING` | `false` | 仅测试用 |
 
 ---
@@ -583,14 +612,14 @@ cd <project-root>\backend
 .\.venv\Scripts\python.exe -m pytest -v
 ```
 
-2026-11-01 最终回归结果：
+2026-11-03 当前回归结果：
 
 ```text
-312 passed, 1 skipped
+356 passed, 2 skipped
 ```
 
-> 被跳过的 1 项是 `test_real_vlm_optional.py`：它会加载真实模型，默认跳过；
-> 设置 `BACKEND_REAL_VLM_TEST=1` 才运行（本机实测 `1 passed in 29.77s`）。
+> 跳过项为历史本地 4.6 GPU 测试和 AutoDL 4.5 真实远程测试。
+> 两者都需要显式环境变量和真实 GPU；默认无 GPU 回归不会伪造通过。
 
 全部使用 `tmp_path` 独立数据目录、合成 MP4（148 字节）与 `job_worker_enabled=False` 的确定性队列，
 **不下载真实视频、不加载模型、不依赖网络**（唯一例外是上面那条 opt-in 测试）。
@@ -675,6 +704,8 @@ backend/
 - [x] Job/Video 状态在单事务内一致更新
 - [x] 重启后中断任务标记 `JOB_INTERRUPTED`
 - [x] **`GET /videos/{id}/results?format=json|csv`**：同一份持久化数据，CSV 带 BOM/正确转义
+- [x] **AutoDL MiniCPM-V 4.5 + scene4/checkpoint-600**：3 秒窗口、每窗口 8 帧整体推理
+- [x] **云端故障隔离**：网络、Token、模型和响应错误均使 Job 失败，不回退 Mock
 - [x] **真实 MiniCPM-V 4.6 适配器**：`BACKEND_VLM_ADAPTER=minicpm`，惰性加载 + 进程内复用
 - [x] **PyAV 解码 + 带真实时间戳的帧采样**（顺序解码，非 seek）
 - [x] **标签解析与分段合并**：只接受 5 个标准标签，异常输出 → `未分类`+`is_uncertain`
@@ -686,13 +717,13 @@ backend/
 - [x] 登录或注册时安全认领当前匿名会话，已认领会话不可重复或转移
 - [x] 个人历史持久化、会话恢复和历史结果重新载入
 - [x] 单调任务进度更新，重复和倒退进度事件不会写入数据库
-- [x] **312 项自动化测试通过 + 1 项 opt-in 真实模型测试**
+- [x] **356 项自动化测试通过；2 项真实 GPU 测试按设计 opt-in 跳过**
 
 ### 未实现（后续阶段）
 
 | 能力 | 计划 |
 |---|---|
-| SAV 批量处理与评价指标 | P1（**阻塞：无人工标注**） |
+| SAV 批量处理与评价 UI | 离线 850 条验证集重建和评估脚本已实现；真实 GPU 指标待运行 |
 | 任务取消（`canceled`） | 未排期；当前明确不支持 |
 | EEG Adapter | P0-7 |
 | 跨模态融合、实时流、SSE/WebSocket | P2 |

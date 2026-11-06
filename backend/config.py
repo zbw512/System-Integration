@@ -11,7 +11,7 @@ be inspected (and unit-tested) even if Flask is not installed.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 #: Interface standard version this backend implements (standard section 1.1).
@@ -49,7 +49,12 @@ LIST_MAX_LIMIT = 500
 
 #: VLM adapter implementations this build knows about.
 DEFAULT_VLM_ADAPTER = "mock"
-SUPPORTED_VLM_ADAPTERS = ("mock", "minicpm")
+SUPPORTED_VLM_ADAPTERS = (
+    "mock",
+    "minicpm",
+    "minicpm_remote",
+    "minicpm_v45_lora",
+)
 
 #: Project root; model weights live outside the backend package and are never
 #: copied into it.
@@ -63,6 +68,17 @@ DEFAULT_VLM_FRAME_INTERVAL_S = 1.0
 DEFAULT_VLM_MAX_DURATION_S = 60.0
 DEFAULT_VLM_MAX_NEW_TOKENS = 48
 DEFAULT_VLM_DEVICE = "cuda"
+
+#: MiniCPM-V 4.5 + LoRA remote inference defaults. The window policy is
+#: provisional pending an exact training-loader comparison.
+DEFAULT_VLM_REMOTE_URL = "http://127.0.0.1:18080"
+DEFAULT_VLM_REMOTE_TIMEOUT_S = 300.0
+DEFAULT_VLM_REMOTE_RETRIES = 2
+DEFAULT_VLM_REMOTE_MAX_RESPONSE_BYTES = 1024 * 1024
+DEFAULT_VLM_WINDOW_SECONDS = 3.0
+DEFAULT_VLM_WINDOW_STRIDE_SECONDS = 3.0
+VLM_WINDOW_POLICY_ID = "provisional-3s-window-3s-stride-tail-v1"
+VLM45_PROMPT_VERSION = "scene4-label-v1"
 
 
 def _env_str(name: str, default: str) -> str:
@@ -184,6 +200,15 @@ class Config:
     #: Generation cap per sampled frame.
     vlm_max_new_tokens: int = DEFAULT_VLM_MAX_NEW_TOKENS
 
+    # --- MiniCPM-V 4.5 remote adapter --------------------------------------
+    vlm_remote_url: str = DEFAULT_VLM_REMOTE_URL
+    vlm_remote_token: str | None = field(default=None, repr=False)
+    vlm_remote_timeout_s: float = DEFAULT_VLM_REMOTE_TIMEOUT_S
+    vlm_remote_retries: int = DEFAULT_VLM_REMOTE_RETRIES
+    vlm_remote_max_response_bytes: int = DEFAULT_VLM_REMOTE_MAX_RESPONSE_BYTES
+    vlm_window_seconds: float = DEFAULT_VLM_WINDOW_SECONDS
+    vlm_window_stride_seconds: float = DEFAULT_VLM_WINDOW_STRIDE_SECONDS
+
     @classmethod
     def from_env(cls) -> "Config":
         """Build a configuration snapshot from ``BACKEND_*`` environment vars."""
@@ -226,6 +251,47 @@ class Config:
         )
         if vlm_max_new_tokens < 1:
             raise ValueError("环境变量 BACKEND_VLM_MAX_NEW_TOKENS 必须为正整数")
+
+        vlm_remote_timeout_s = _env_float(
+            "BACKEND_VLM_REMOTE_TIMEOUT_S", DEFAULT_VLM_REMOTE_TIMEOUT_S
+        )
+        if vlm_remote_timeout_s <= 0:
+            raise ValueError("环境变量 BACKEND_VLM_REMOTE_TIMEOUT_S 必须大于 0")
+
+        vlm_remote_retries = _env_int(
+            "BACKEND_VLM_REMOTE_RETRIES", DEFAULT_VLM_REMOTE_RETRIES
+        )
+        if not 0 <= vlm_remote_retries <= 5:
+            raise ValueError("环境变量 BACKEND_VLM_REMOTE_RETRIES 必须在 0-5 之间")
+
+        vlm_remote_max_response_bytes = _env_int(
+            "BACKEND_VLM_REMOTE_MAX_RESPONSE_BYTES",
+            DEFAULT_VLM_REMOTE_MAX_RESPONSE_BYTES,
+        )
+        if vlm_remote_max_response_bytes <= 0:
+            raise ValueError(
+                "环境变量 BACKEND_VLM_REMOTE_MAX_RESPONSE_BYTES 必须为正整数"
+            )
+
+        vlm_window_seconds = _env_float(
+            "BACKEND_VLM_WINDOW_SECONDS", DEFAULT_VLM_WINDOW_SECONDS
+        )
+        vlm_window_stride_seconds = _env_float(
+            "BACKEND_VLM_WINDOW_STRIDE_SECONDS",
+            DEFAULT_VLM_WINDOW_STRIDE_SECONDS,
+        )
+        if vlm_window_seconds <= 0:
+            raise ValueError("环境变量 BACKEND_VLM_WINDOW_SECONDS 必须大于 0")
+        if vlm_window_stride_seconds < vlm_window_seconds:
+            raise ValueError(
+                "BACKEND_VLM_WINDOW_STRIDE_SECONDS 不能小于窗口长度；"
+                "初版不支持重叠窗口"
+            )
+        if (
+            vlm_adapter in {"minicpm_remote", "minicpm_v45_lora"}
+            and vlm_max_frames > 8
+        ):
+            raise ValueError("MiniCPM-V 4.5 远程模式最多允许 8 帧")
 
         guest_session_ttl_hours = _env_int(
             "BACKEND_GUEST_SESSION_TTL_HOURS",
@@ -292,6 +358,17 @@ class Config:
             vlm_frame_interval_s=vlm_frame_interval_s,
             vlm_max_duration_s=vlm_max_duration_s,
             vlm_max_new_tokens=vlm_max_new_tokens,
+            vlm_remote_url=_env_str(
+                "BACKEND_VLM_REMOTE_URL", DEFAULT_VLM_REMOTE_URL
+            ),
+            vlm_remote_token=(
+                _env_str("BACKEND_VLM_REMOTE_TOKEN", "") or None
+            ),
+            vlm_remote_timeout_s=vlm_remote_timeout_s,
+            vlm_remote_retries=vlm_remote_retries,
+            vlm_remote_max_response_bytes=vlm_remote_max_response_bytes,
+            vlm_window_seconds=vlm_window_seconds,
+            vlm_window_stride_seconds=vlm_window_stride_seconds,
         )
 
     # --- derived paths -----------------------------------------------------

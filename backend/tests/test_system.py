@@ -53,9 +53,9 @@ def test_health_returns_ok(client):
 def test_health_reports_component_status_honestly(client):
     checks = client.get("/health").get_json()["checks"]
 
-    # Storage exists since P0-2; the VLM and EEG adapters still do not.
+    # Storage and Mock VLM are available; EEG is still unimplemented.
     assert checks["storage"] == "ok"
-    assert checks["vlm_adapter"] == "not_implemented"
+    assert checks["vlm_adapter"] == "mock"
     assert checks["eeg_adapter"] == "not_implemented"
 
 

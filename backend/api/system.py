@@ -55,6 +55,11 @@ def health():
     cfg: Config = current_app.config["APP_CONFIG"]
     started_at = current_app.extensions.get("backend_started_at_monotonic")
     uptime_s = max(0.0, time.monotonic() - started_at) if started_at else 0.0
+    adapter = current_app.extensions["vlm_adapter"]
+    if adapter.name == "mock":
+        vlm_adapter_status = "mock"
+    else:
+        vlm_adapter_status = str(adapter.describe().get("status", "configured"))
 
     payload = {
         "status": OK,
@@ -69,7 +74,7 @@ def health():
         "checks": {
             "http": OK,
             "storage": OK if storage_db.ping(cfg.database_path) else "error",
-            "vlm_adapter": NOT_IMPLEMENTED,
+            "vlm_adapter": vlm_adapter_status,
             "eeg_adapter": NOT_IMPLEMENTED,
         },
         "request_id": get_request_id(),

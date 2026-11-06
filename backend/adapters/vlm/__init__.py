@@ -7,8 +7,10 @@ and one module — the API, services and storage layers stayed unchanged.
 Two modes, never mixed:
 
 * ``mock``    — deterministic placeholder labels, ``prediction_source=mock``;
-* ``minicpm`` — real local MiniCPM-V 4.6 inference, ``prediction_source=model``.
-  It never falls back to mock output when inference fails; the job fails instead.
+* ``minicpm`` — historical local MiniCPM-V 4.6 implementation;
+* ``minicpm_remote`` / ``minicpm_v45_lora`` — official MiniCPM-V 4.5 +
+  scene4/checkpoint-600 inference through AutoDL. Neither real mode falls back
+  to mock output when inference fails; the job fails instead.
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ from __future__ import annotations
 from config import SUPPORTED_VLM_ADAPTERS, Config
 from adapters.vlm.base import AnalysisOutput, AnalysisRequest, VlmAdapter
 from adapters.vlm.minicpm import MiniCPMV46Adapter
+from adapters.vlm.minicpm_remote import MiniCPMV45RemoteAdapter
 from adapters.vlm.mock import MockVlmAdapter
 
 __all__ = [
@@ -23,6 +26,7 @@ __all__ = [
     "AnalysisRequest",
     "VlmAdapter",
     "MiniCPMV46Adapter",
+    "MiniCPMV45RemoteAdapter",
     "MockVlmAdapter",
     "build_vlm_adapter",
 ]
@@ -36,6 +40,8 @@ def build_vlm_adapter(config: Config) -> VlmAdapter:
         return MockVlmAdapter()
     if name == "minicpm":
         return MiniCPMV46Adapter(config)
+    if name in {"minicpm_remote", "minicpm_v45_lora"}:
+        return MiniCPMV45RemoteAdapter(config)
 
     # ``Config.from_env`` already rejects unknown values; this guards direct
     # dataclass construction (e.g. in tests) from silently building nothing.

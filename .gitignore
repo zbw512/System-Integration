@@ -1,15 +1,32 @@
 # Local Python environments
 .venv/
 **/.venv/
+**/.venv-*/
 
 # Local model assets; weights must not be committed
 models/
+**/*.safetensors
+**/*.ckpt
+**/*.onnx
+**/*.gguf
+**/pytorch_model.bin
+**/training_args.bin
+**/optimizer.pt
+**/scheduler.pt
 
 # Runtime data and generated builds
 backend/var/
+work/
 frontend/dist/
+**/dist/
+**/build/
 **/__pycache__/
 **/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/.coverage
+**/htmlcov/
+.run/
 
 # Local environment files
 .env
@@ -18,3 +35,39 @@ frontend/dist/
 
 # Logs
 *.log
+
+# AutoDL connection parameters and secrets are local-only
+scripts/autodl.connection.psd1
+scripts/autodl.secrets.psd1
+
+# Classroom data, training samples and archives are external assets
+SAV/
+datasets/
+**/training_samples/
+**/*_train*.jsonl
+**/*_val*.jsonl
+**/*.mp4
+**/*.m4v
+**/*.mov
+**/*.zip
+**/*.7z
+
+# Runtime databases and local credentials
+**/*.db
+**/*.db-wal
+**/*.db-shm
+**/*.db-journal
+**/*.sqlite
+**/*.sqlite3
+**/.ssh/
+**/id_rsa
+**/id_ed25519
+**/*.pem
+**/*.ppk
+
+# Editor and operating-system files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini
